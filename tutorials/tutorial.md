@@ -181,7 +181,7 @@ This builds a (10,10) armchair CNT with 5 unit cells, no functionalisation, no s
 INPUT = {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "1.0",
+        "version": "0.6.3",
         "creator": "your name",
         "filename": "chirality_kit.py"
     },
@@ -1087,7 +1087,7 @@ A good example is a dense molecular mixture, here benzene with dissolved CO2, pa
 {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "1.0",
+        "version": "0.6.3",
         "creator": "your name",
         "filename": "chirality_kit.py"
     },
@@ -1162,4 +1162,4 @@ The resulting `.xyz` is ready to drop into your MLIP training set labelling work
 
 ---
 
-*Contact: stefan.zhikharev@warwick.ac.uk*
+*Contact: [GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues), or stefan.zhikharev@warwick.ac.uk*

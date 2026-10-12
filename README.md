@@ -79,7 +79,7 @@ place. There is nothing to install but the one dependency. It requires Python
 3.10 or newer and NumPy 2.0 or newer:
 
 ```bash
-git clone https://github.com/genericuser101/chirality-kit.git
+git clone https://github.com/stepan-zhikh/chirality-kit.git
 ```
 
 ```bash
@@ -638,8 +638,9 @@ chirality-kit is released under the [MIT licence](LICENSE).
 
 The repository also redistributes CHARMM topology and parameter files, which are
 the work of the MacKerell lab and not of chirality-kit. They are covered by their
-own MIT licence; see [`src/force-fields/README.md`](src/force-fields/README.md)
-for provenance, attribution, and the force-field references you should cite.
+own MIT licence; see [`NOTICE`](NOTICE) and
+[`src/force-fields/README.md`](src/force-fields/README.md) for provenance,
+attribution, and the force-field references you should cite.
 
 ---
 
@@ -653,6 +654,8 @@ authors of any force field you simulated with as well.
 
 ## Contact & support
 
-stefan.zhikharev@warwick.ac.uk
+Please report bugs, ask questions, and suggest features through
+[GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues).
 
-This project is maintained by one person. For urgent support please use the email above.
+This project is maintained by one person. If an issue is not suitable, email
+stefan.zhikharev@warwick.ac.uk.

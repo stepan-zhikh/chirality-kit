@@ -298,7 +298,13 @@ Atoms
         2   1   2  -0.688   0.000    0.000   0.000   # DSOD
 
 Bond Coeffs
+
+        1   500.00      0.0000  #  SODD   DSOD 
+
 Bonds
+
+        1   1   1   2   # SODD   DSOD 
+
 Angle Coeffs
 Angles
 Dihedral Coeffs 
@@ -323,7 +329,13 @@ Atoms
         2   1   2  -0.31  0.000    0.000   0.000   # DLID
 
 Bond Coeffs
+
+        1   500.00      0.0000  #  LID   DLID 
+
 Bonds
+
+        1   1   1   2   # LID   DLID 
+
 Angle Coeffs
 Angles
 Dihedral Coeffs
@@ -537,7 +549,13 @@ Atoms
         2   1   2  -1.215 0.000    0.000   0.000   # DCAL
 
 Bond Coeffs
+
+        1   500.00      0.0000  #  CALD   DCAL 
+
 Bonds
+
+        1   1   1   2   # CALD   DCAL 
+
 Angle Coeffs
 Angles
 Dihedral Coeffs

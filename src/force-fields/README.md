@@ -14,7 +14,7 @@ in the repository root. The upstream files in the `toppar/` trees are **not**
 chirality-kit's work. Their provenance and licences are recorded below, along
 with any separate chirality-kit additions.
 
-Select a force field with the `force_field` key in the input JSON. Point at a
+Select a force field with the `system.force-field` key in the input JSON. Point at a
 different tree entirely with `--force-fields /path/to/force-fields`; the folder
 must be named exactly `force-fields`.
 

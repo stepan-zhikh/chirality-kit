@@ -1,0 +1,12 @@
+chirality-kit
+Copyright (c) 2026 Stefan Zhikharev
+
+The chirality-kit source code is released under the MIT licence in LICENSE.
+
+THIRD-PARTY MATERIAL
+
+This repository redistributes force-field parameter and topology files that are
+not covered by that copyright. Their provenance, licences and attribution are
+recorded in src/force-fields/README.md, and the upstream CHARMM licence is in
+src/force-fields/LICENSE.charmm. Those terms govern that material; the MIT
+licence in LICENSE governs the chirality-kit source code.

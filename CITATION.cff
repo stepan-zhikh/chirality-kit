@@ -10,7 +10,7 @@ authors:
     family-names: Zhikharev
     email: stefan.zhikharev@warwick.ac.uk
     affiliation: University of Warwick
-repository-code: 'https://github.com/genericuser101/chirality-kit'
+repository-code: 'https://github.com/stepan-zhikh/chirality-kit'
 abstract: >-
   A standalone molecular-dynamics input-file generator for functionalised
   nanostructures. chirality-kit builds carbon, boron nitride, MoS2 and MoSSe
@@ -27,5 +27,21 @@ keywords:
   - force field
   - structure generation
 license: MIT
-version: 0.6.2
-date-released: '2026-09-14'
+version: 0.6.3
+date-released: '2026-10-12'
+
+# ---------------------------------------------------------------------------
+# When a paper describing or using chirality-kit is published, fill in and
+# uncomment the block below. Reference managers that understand CITATION.cff
+# will then redirect citations to the paper, while the software metadata above
+# stays available for citing a specific version.
+# ---------------------------------------------------------------------------
+# preferred-citation:
+#   type: article
+#   title: ''
+#   authors:
+#     - given-names: Stefan
+#       family-names: Zhikharev
+#   journal: ''
+#   year: 2026
+#   doi: ''

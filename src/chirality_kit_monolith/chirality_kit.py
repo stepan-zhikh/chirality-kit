@@ -42,9 +42,9 @@ INPUT = {
 
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "1.0",
+        "version": "0.6.3",
         "creator": "Stef @ Warwick University",
-        "filename": "chirality_main.py"
+        "filename": "chirality_kit.py"
     },
 
     "settings": {
@@ -352,7 +352,7 @@ class Config:
         self.bulk_priority = None
 
         # Current release version; archived inputs don't store this yet.
-        self.version = "0.6.2"
+        self.version = "0.6.3"
 
         self.force_field = "CHARMM36m"
         self.drude_polarisable = False  # whether to use Drude polarisable model
