@@ -31,7 +31,7 @@ INPUT = {
 
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.3",
+        "version": "0.6.4",
         "creator": "Stef @ Warwick University",
         "filename": "chirality_kit.py"
     },

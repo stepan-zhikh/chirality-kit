@@ -181,7 +181,7 @@ This builds a (10,10) armchair CNT with 5 unit cells, no functionalisation, no s
 INPUT = {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.3",
+        "version": "0.6.4",
         "creator": "your name",
         "filename": "chirality_kit.py"
     },
@@ -1087,7 +1087,7 @@ A good example is a dense molecular mixture, here benzene with dissolved CO2, pa
 {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.3",
+        "version": "0.6.4",
         "creator": "your name",
         "filename": "chirality_kit.py"
     },

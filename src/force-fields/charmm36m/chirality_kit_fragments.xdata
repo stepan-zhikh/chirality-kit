@@ -354,6 +354,8 @@ Dihedral Coeffs
         5   0.0500  3  180.00  # CG2R61 CG2O2  OG311  HGP1     
         6   0.2500  6  180.00  # CG2R61 CG2O2  OG311  HGP1     
         7   2.0500  2  180.00  # OG2D1  CG2O2  OG311  HGP1
+        8   1.0250  2  180.00  # OG2D1  CG2O2  CG2R61 CG2R61
+        9   1.0250  2  180.00  # OG311  CG2O2  CG2R61 CG2R61
 
         COMMENT: dihedrals 3-6 are a multi-term Fourier series for the C-O-O-H torsion (n=1,2,3,6 all present); make sure your dihedral handler sums all four terms rather than overwriting them.
 

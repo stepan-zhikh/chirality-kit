@@ -42,7 +42,7 @@ INPUT = {
 
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.3",
+        "version": "0.6.4",
         "creator": "Stef @ Warwick University",
         "filename": "chirality_kit.py"
     },
@@ -352,7 +352,7 @@ class Config:
         self.bulk_priority = None
 
         # Current release version; archived inputs don't store this yet.
-        self.version = "0.6.3"
+        self.version = "0.6.4"
 
         self.force_field = "CHARMM36m"
         self.drude_polarisable = False  # whether to use Drude polarisable model
@@ -9859,27 +9859,23 @@ class IO:
                 self.file_manager.find_and_extract_lines(self.config.main_file, "Dihedrals", header=False)
                 if self.json_input["settings"]["dihedrals"] else []
             )
-            f.write(f"\n{len(lines):10d} !NPHI: dihedrals\n")
-            for i in range(len(lines))[::2]:
-                parts1 = self.file_manager.line_to_array(lines[i]) if i < len(lines) else None
-                parts2 = self.file_manager.line_to_array(lines[i+1]) if i+1 < len(lines) else None
-                parts = [parts1, parts2]
-                line = []
-                for part in parts:
-                    if part is not None:
-                        atom1 = int(part[2])
-                        atom2 = int(part[3])
-                        atom3 = int(part[4])
-                        atom4 = int(part[5])
-                        atom1_corrected = atom_index_map[atom1]
-                        atom2_corrected = atom_index_map[atom2]
-                        atom3_corrected = atom_index_map[atom3]
-                        atom4_corrected = atom_index_map[atom4]
-                        line.append(atom1_corrected)
-                        line.append(atom2_corrected)
-                        line.append(atom3_corrected)
-                        line.append(atom4_corrected)
+            # A multi-term dihedral (a Fourier series) is one Dihedrals entry per term, as
+            # LAMMPS needs. A PSF holds only atom indices and NAMD/CHARMM apply every
+            # parameter line of the type quartet to each entry, so each quartet goes in once.
+            quartets = []
+            seen_quartets = set()
+            for raw_line in lines:
+                part = self.file_manager.line_to_array(raw_line)
+                quartet = tuple(atom_index_map[int(part[k])] for k in (2, 3, 4, 5))
+                key = min(quartet, quartet[::-1])
+                if key in seen_quartets:
+                    continue
+                seen_quartets.add(key)
+                quartets.append(quartet)
 
+            f.write(f"\n{len(quartets):10d} !NPHI: dihedrals\n")
+            for i in range(0, len(quartets), 2):
+                line = [atom for quartet in quartets[i:i + 2] for atom in quartet]
                 line_write = "".join(f"{v:{DIHED_INT_WIDTH}d}" for v in line) + "\n"
                 f.write(line_write)
 

@@ -27,8 +27,8 @@ keywords:
   - force field
   - structure generation
 license: MIT
-version: 0.6.3
-date-released: '2026-10-12'
+version: 0.6.4
+date-released: '2026-10-13'
 
 # ---------------------------------------------------------------------------
 # When a paper describing or using chirality-kit is published, fill in and
