@@ -604,7 +604,9 @@ class File_Manager:
             if section in enabled:
                 values[count_name] = self.find_number_of_entries_in_section(coefficient_section)
 
-        box = self.update_box_size()
+        # A sheet build keeps its exact lattice-matched box instead of atom extents.
+        fixed_box = getattr(self.config, "fixed_box", None)
+        box = fixed_box if fixed_box is not None else self.update_box_size()
 
         values['xlo xhi'] = box[0]
         values['ylo yhi'] = box[1]

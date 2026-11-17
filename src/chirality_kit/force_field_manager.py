@@ -93,6 +93,92 @@ class Force_Field_Manager:
             for line in self.file_manager.find_and_extract_lines(self.config.main_file, section, header=False)
         }
 
+    def _atom_types_by_index(self, lines):
+
+        '''
+        Map every atom index in the Atoms section of lines to its type name, the
+        comment after '#'. It reads the section exactly as get_atom_type_from_index
+        does, first match kept, so one pass replaces a file read per lookup.
+
+        Parameters:
+        ----------
+        lines : list of str
+            Lines of an xdata file.
+
+        Returns:
+        -------
+        types : dict
+            Atom index string -> atom type name.
+
+        Raises:
+        ------
+        None
+        '''
+
+        types = {}
+        in_atoms_section = False
+        for line in lines:
+            if "Atoms" in line:
+                in_atoms_section = True
+                continue
+            if in_atoms_section:
+                if line.strip("\n") == "":
+                    continue
+                if "Bond" in line:
+                    break
+                parts = line.strip('\n').split('#')
+                types.setdefault(parts[0].split()[0].strip(), parts[1].strip())
+        return types
+
+    def _topology_lookups(self, lines):
+
+        '''
+        Lookups for one inject_*_from_bonds call: an atom's type and element by
+        index, read once from lines, and Coeffs matches remembered per type
+        tuple. The main file does not change during a call until it is written
+        at the end, so these give the same answers as reading it per lookup.
+
+        Parameters:
+        ----------
+        lines : list of str
+            The main file as read at the start of the call.
+
+        Returns:
+        -------
+        atom_type : callable
+            atom_type(index) -> type name, or None if the index is not found.
+        element : callable
+            element(index) -> element symbol of that atom's type.
+        coeff : callable
+            coeff(lookup, *type_names) -> lookup(*type_names), computed once
+            per lookup and type tuple.
+
+        Raises:
+        ------
+        None
+        '''
+
+        type_by_index = self._atom_types_by_index(lines)
+        element_by_type = {}
+        matches = {}
+
+        def atom_type(index):
+            return type_by_index.get(str(index))
+
+        def element(index):
+            name = atom_type(index)
+            if name not in element_by_type:
+                element_by_type[name] = self.get_atom_element(name)
+            return element_by_type[name]
+
+        def coeff(lookup, *names):
+            key = (lookup.__name__,) + names
+            if key not in matches:
+                matches[key] = lookup(*names)
+            return matches[key]
+
+        return atom_type, element, coeff
+
     def _inject_xyz_atoms_and_bonds(
         self,
         xyz_filename,
@@ -104,13 +190,16 @@ class Force_Field_Manager:
         bond_index_offset=None,
         include_drude=False,
         drude_suffix="-DRUD",
+        periodic_lengths=None,
     ):
 
         '''
         Inject nanotube atoms and cutoff-derived bonds from an XYZ file. Element
         labels are mapped to force-field atom types, bonds are generated only
         for allowed atom-type pairs, and optional Drude particles are inserted
-        immediately after each core atom.
+        immediately after each core atom. periodic_lengths, a (Lx, Ly, Lz) tuple
+        with None for open axes, measures bond distances with the minimum image
+        along the given axes, so a sheet bonds across the periodic boundary.
         '''
 
         enabled = self.config.enabled_xdata_sections
@@ -131,6 +220,20 @@ class Force_Field_Manager:
 
         atom_section_end = self.file_manager.find_injection_point(main_lines, "Atoms")
         core_atoms = []
+
+        # Masses and Bond Coeffs do not change during this call: look each type up once.
+        atom_codes = {}
+        bond_codes = {}
+
+        def atom_code(name):
+            if name not in atom_codes:
+                atom_codes[name] = self.get_new_atom_type(name)
+            return atom_codes[name]
+
+        def bond_code(name_1, name_2):
+            if (name_1, name_2) not in bond_codes:
+                bond_codes[(name_1, name_2)] = self.get_new_bond_type(name_1, name_2)
+            return bond_codes[(name_1, name_2)]
         inject_idx = 1
 
         for line in lines:
@@ -145,7 +248,7 @@ class Force_Field_Manager:
 
             x, y, z = map(float, parts[1:4])
             new_atom_index = int(atom_index_offset) + inject_idx
-            new_atom_type = self.get_new_atom_type(atom_type)
+            new_atom_type = atom_code(atom_type)
             if new_atom_type is None:
                 raise ValueError(f"Could not get atom code for atom '{atom_type}'")
 
@@ -176,7 +279,7 @@ class Force_Field_Manager:
             if include_drude:
                 drude_atom_index = int(atom_index_offset) + inject_idx
                 drude_atom_type = f"{atom_type}{drude_suffix}"
-                drude_type_idx = self.get_new_atom_type(drude_atom_type)
+                drude_type_idx = atom_code(drude_atom_type)
                 if drude_type_idx is None:
                     raise ValueError(f"Could not get atom code for atom '{drude_atom_type}'")
 
@@ -226,7 +329,7 @@ class Force_Field_Manager:
                 if bond_key in existing_bonds:
                     continue
 
-                bond_type = self.get_new_bond_type(atom["atom_type"], atom["drude_atom_type"])
+                bond_type = bond_code(atom["atom_type"], atom["drude_atom_type"])
                 if bond_type is None:
                     raise ValueError(
                         f"Could not get bond type for atoms "
@@ -258,7 +361,12 @@ class Force_Field_Manager:
                     continue
 
                 pj = np.array([atom_j["x"], atom_j["y"], atom_j["z"]], dtype=float)
-                if np.linalg.norm(pi - pj) > cutoff:
+                delta = pi - pj
+                if periodic_lengths is not None:
+                    for axis, length in enumerate(periodic_lengths):
+                        if length:
+                            delta[axis] -= length * np.round(delta[axis] / length)
+                if np.linalg.norm(delta) > cutoff:
                     continue
 
                 bond_key = self._bond_key(atom_i["atom_index"], atom_j["atom_index"])
@@ -268,9 +376,7 @@ class Force_Field_Manager:
                 new_bond_index = int(bond_index_offset) + inject_idx
                 bond_type = ""
                 if write_bonds:
-                    bond_type = self.get_new_bond_type(
-                        atom_i["atom_type"], atom_j["atom_type"]
-                    )
+                    bond_type = bond_code(atom_i["atom_type"], atom_j["atom_type"])
                     if bond_type is None:
                         raise ValueError(
                             f"Could not get bond type for atoms "
@@ -1170,6 +1276,7 @@ class Force_Field_Manager:
             return
 
         main_lines = self.file_manager.read_file(self.config.main_file)
+        atom_type, element, coeff = self._topology_lookups(main_lines)
 
         angle_section_end = self.file_manager.find_injection_point(self.config.main_file, "Angles")
         adjacency = self._create_adjacency(bonds_data)
@@ -1184,17 +1291,17 @@ class Force_Field_Manager:
 
         for node1 in adjacency:
 
-            if self.get_atom_element(self.get_atom_type_from_index(None, node1)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+            if element(node1) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                 continue
 
             for node2 in adjacency[node1]:
 
-                if self.get_atom_element(self.get_atom_type_from_index(None, node2)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+                if element(node2) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                     continue
 
                 for node3 in adjacency[node2]:
 
-                    if self.get_atom_element(self.get_atom_type_from_index(None, node3)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+                    if element(node3) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                         continue                    
                     if node3 == node1:                    # Skip if node3 is node 1
                         continue
@@ -1210,8 +1317,8 @@ class Force_Field_Manager:
         
         for normalised_path in unique_angles:
             node1, node2, node3 = normalised_path
-            atom_types = [self.get_atom_type_from_index(self.config.main_file, new_atom_index=node) for node in normalised_path]
-            angle_info = self.get_new_angle_type(atom_types[0], atom_types[1], atom_types[2])
+            atom_types = [atom_type(node) for node in normalised_path]
+            angle_info = coeff(self.get_new_angle_type, atom_types[0], atom_types[1], atom_types[2])
 
             if angle_info is None:
                 missing_angles.add((atom_types[0], atom_types[1], atom_types[2]))
@@ -1280,6 +1387,7 @@ class Force_Field_Manager:
             return
 
         main_lines = self.file_manager.read_file(self.config.main_file)
+        atom_type, element, coeff = self._topology_lookups(main_lines)
 
         dihedral_section_end = self.file_manager.find_injection_point(self.config.main_file, "Dihedrals")
         dihedral_idx_offset = max(dihedral_idx_offset, self.file_manager.find_last_section_idx(main_lines, "Dihedrals") or 0)
@@ -1298,17 +1406,17 @@ class Force_Field_Manager:
 
         for node1 in adjacency:
 
-            if self.get_atom_element(self.get_atom_type_from_index(None, node1)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+            if element(node1) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                 continue
 
             for node2 in adjacency[node1]:
 
-                if self.get_atom_element(self.get_atom_type_from_index(None, node2)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+                if element(node2) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                     continue
 
                 for node3 in adjacency[node2]:
 
-                    if self.get_atom_element(self.get_atom_type_from_index(None, node3)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+                    if element(node3) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                         continue
 
                     # 1. 3-atom loops cannot be governed by a dihedral coefficient
@@ -1317,7 +1425,7 @@ class Force_Field_Manager:
                     
                     for node4 in adjacency[node3]:
 
-                        if self.get_atom_element(self.get_atom_type_from_index(None, node4)) in ["DP", "LP"]: # dont check drude atoms or lone pairs
+                        if element(node4) in ["DP", "LP"]: # dont check drude atoms or lone pairs
                             continue
 
                         # 2. Already in the path
@@ -1340,8 +1448,8 @@ class Force_Field_Manager:
 
                         n1, n2, n3, n4 = normalised_path
 
-                        atom_types = [self.get_atom_type_from_index(self.config.main_file, new_atom_index=node) for node in normalised_path]
-                        dihedral_infos = self.get_new_dihedral_types(atom_types[0], atom_types[1], atom_types[2], atom_types[3])
+                        atom_types = [atom_type(node) for node in normalised_path]
+                        dihedral_infos = coeff(self.get_new_dihedral_types, atom_types[0], atom_types[1], atom_types[2], atom_types[3])
 
                         if not dihedral_infos:
                             missed +=1 
@@ -1426,13 +1534,14 @@ class Force_Field_Manager:
             return
 
         main_lines = self.file_manager.read_file(self.config.main_file)
+        atom_type, element, coeff = self._topology_lookups(main_lines)
         improper_section_end = self.file_manager.find_injection_point(self.config.main_file, "Impropers")
         adjacency = self._create_adjacency(bonds_data)
 
         excluded = {"DP", "LP"}
 
         def is_heavy(node):
-            return self.get_atom_element(self.get_atom_type_from_index(None, node)) not in excluded
+            return element(node) not in excluded
 
         seen_centres  = set()
         missing_impropers = set()
@@ -1459,12 +1568,9 @@ class Force_Field_Manager:
             found = False
             for perm in permutations(heavy_neighbours):
                 a, b, c = perm
-                atom_types = [
-                    self.get_atom_type_from_index(self.config.main_file, new_atom_index=node)
-                    for node in [centre, a, b, c]
-                ]
+                atom_types = [atom_type(node) for node in [centre, a, b, c]]
 
-                improper_info = self.get_new_improper_type(*atom_types)
+                improper_info = coeff(self.get_new_improper_type, *atom_types)
                 if improper_info is None:
                     continue
 
@@ -1475,10 +1581,10 @@ class Force_Field_Manager:
                     f"{improper_type}",
                     f"{centre}", f"{a}", f"{b}", f"{c}",
                     "#",
-                    self.get_atom_type_from_index(self.config.main_file, new_atom_index=centre),
-                    self.get_atom_type_from_index(self.config.main_file, new_atom_index=a),
-                    self.get_atom_type_from_index(self.config.main_file, new_atom_index=b),
-                    self.get_atom_type_from_index(self.config.main_file, new_atom_index=c),
+                    atom_type(centre),
+                    atom_type(a),
+                    atom_type(b),
+                    atom_type(c),
                 ]
 
                 new_line = self.file_manager.standardise_line(new_line_arr, "Impropers")
@@ -1490,7 +1596,7 @@ class Force_Field_Manager:
             if not found:
                 missed += 1
                 types = tuple(
-                    self.get_atom_type_from_index(self.config.main_file, new_atom_index=node)
+                    atom_type(node)
                     for node in [centre] + list(heavy_neighbours)
                 )
                 missing_impropers.add(types)

@@ -991,7 +991,7 @@ class Solution_Generator:
     # SOLVENT LINE BUILDERS
     # -------------------------------------------------------------------------
 
-    def write_solvent(self, sol, box_size, bridson_params=None, is_last_ionic=True):
+    def write_solvent(self, sol, box_size, bridson_params=None, is_last_ionic=True, no_go_slab=None):
 
         '''
         Dispatcher for solvent placement. Builds solvent data in memory then
@@ -1020,6 +1020,10 @@ class Solution_Generator:
             The last group is also the only one that sees the fully accumulated
             charge, so a single correction there lands closest (default True, which
             is correct for a non-ionic group or a lone salt).
+        no_go_slab : tuple, optional
+            (z_lo, z_hi, axis_x, axis_y, radius): ions are kept out of this slab
+            outside the radius, the region tube-end sheets will close. None
+            (the default) places ions as before.
 
         Returns:
         -------
@@ -1056,6 +1060,7 @@ class Solution_Generator:
             min_distance=       min_distance,
             molecules_per_unit= sol.get('molecules_per_unit', 1),
             bridson_params=     bridson_params,
+            no_go_slab=         no_go_slab,
         )
 
         self._inject_solvent(solvent_data, min_distance=min_distance)
@@ -1072,6 +1077,7 @@ class Solution_Generator:
         charge_neutral=True, placement_type="packed", random_rotation=True,
         molecules_per_unit=1,
         bridson_params=None,
+        no_go_slab=None,
         ):
 
 
@@ -1115,6 +1121,10 @@ class Solution_Generator:
             Sampling tuning parameters. Falls back to config.bridson_params if None.
             Keys: k, r_floor, repeats, bracket_steps, bin_steps, final_repeats,
             tol_frac, injection_limit.
+        no_go_slab : tuple, optional
+            (z_lo, z_hi, axis_x, axis_y, radius) for ionic placement: a position
+            inside the slab and outside the radius is rejected. None places ions
+            as before.
 
         Returns:
         -------
@@ -1429,6 +1439,15 @@ class Solution_Generator:
                             if (no_go_cuboid[0] < random_position[0] < no_go_cuboid[1] and
                                 no_go_cuboid[2] < random_position[1] < no_go_cuboid[3] and
                                 no_go_cuboid[4] < random_position[2] < no_go_cuboid[5] ):
+                                attempts += 1
+                                continue
+
+                        # The slab tube-end sheets will close, outside the tube.
+                        if no_go_slab is not None:
+                            slab_lo, slab_hi, slab_x, slab_y, slab_r = no_go_slab
+                            if (slab_lo < random_position[2] < slab_hi and
+                                    np.hypot(random_position[0] - slab_x,
+                                             random_position[1] - slab_y) > slab_r):
                                 attempts += 1
                                 continue
 

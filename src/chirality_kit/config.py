@@ -189,7 +189,7 @@ class Config:
         self.bulk_priority = None
 
         # Current release version; archived inputs don't store this yet.
-        self.version = "0.6.4"
+        self.version = "0.8.0"
 
         self.force_field = "CHARMM36m"
         self.drude_polarisable = False  # whether to use Drude polarisable model
@@ -209,6 +209,11 @@ class Config:
         self.system_name = None # name of the system, used for naming output files
         self.system_folder = None # folder to save output files in, named after system and timestamp to avoid overwriting
         self.out_name = None # optional CLI output folder; its basename names generated files
+
+        # Sheet builds only: the exact lattice-matched box ([lo, hi] per axis) and
+        # the residue name of each sheet residue, keyed by residue index.
+        self.fixed_box = None
+        self.residue_name_by_index = {}
 
 
     def _default_species_entry_is_drude_particle(self, entry):

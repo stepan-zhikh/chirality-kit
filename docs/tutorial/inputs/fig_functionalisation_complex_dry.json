@@ -1,0 +1,118 @@
+{
+    "metadata": {
+        "made-by": "chirality-kit",
+        "version": "0.8.0",
+        "creator": "Stef @ Warwick University",
+        "filename": "chirality_kit.py"
+    },
+    "settings": {
+        "system_name": "auto",
+        "verbose": false,
+        "output_types": [
+            ".pdb",
+            ".psf",
+            ".xyz",
+            ".data"
+        ],
+        "bonds": true,
+        "angles": true,
+        "dihedrals": true,
+        "impropers": true,
+        "lone-pairs": true,
+        "anisotropy": true
+    },
+    "system": {
+        "force-field": "CHARMM36m",
+        "size": "auto",
+        "size-padding-xy": 14.0,
+        "size-padding-z": 30.0,
+        "nanotube": true,
+        "functionalisation": true,
+        "solvation": false
+    },
+    "nanotube": {
+        "type": "CNT",
+        "n": 8,
+        "m": 4,
+        "repeats": 7
+    },
+    "functionalisation": {
+        "term": {
+            "term-hydrogenate": true,
+            "groups": [
+                {
+                    "type": "COO-",
+                    "count": 2
+                },
+                {
+                    "type": "OH-",
+                    "count": 4,
+                    "side": "-"
+                }
+            ]
+        },
+        "rings": [
+            {
+                "ring-phase-increment": 0.78539816339,
+                "ring-phase-start-offset": 0.0,
+                "ring-padding": true,
+                "ring-count": 7,
+                "ring-placement": "external",
+                "groups": [
+                    {
+                        "type": "C2H5",
+                        "count": 1
+                    },
+                    {
+                        "type": "OH-",
+                        "count": 1
+                    },
+                    {
+                        "type": "OH-",
+                        "count": 5
+                    }
+                ]
+            },
+            {
+                "ring-phase-increment": 0.78539816339,
+                "ring-phase-start-offset": 0.0,
+                "ring-padding": true,
+                "ring-count": 3,
+                "ring-placement": "internal",
+                "groups": [
+                    {
+                        "type": "H+",
+                        "count": 1
+                    },
+                    {
+                        "type": "OH-",
+                        "count": 1
+                    },
+                    {
+                        "type": "OH-",
+                        "count": 5
+                    }
+                ]
+            }
+        ],
+        "loose": {
+            "groups": [
+                {
+                    "loose-placement": "random",
+                    "type": "H+",
+                    "count": 2
+                },
+                {
+                    "loose-placement": "all-external",
+                    "type": "H+",
+                    "count": 2
+                },
+                {
+                    "loose-placement": "all-internal",
+                    "type": "H+",
+                    "count": 2
+                }
+            ]
+        }
+    }
+}

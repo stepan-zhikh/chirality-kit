@@ -1,22 +1,26 @@
-# chirality-kit
+![chirality-kit](docs/banner.png)
 
-Build molecular structures and topology files for functionalised nanotubes,
-solvated channels, electrolyte boxes, and molecular packing workflows. The
-repository contains both the original standalone script and an equivalent
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#requirements)
+[![Release](https://img.shields.io/github/v/release/stepan-zhikh/chirality-kit)](https://github.com/stepan-zhikh/chirality-kit/releases)
+
+**Builds functionalised nanotubes (CNT, BNNT, MoS₂, MoSSe), graphene walls,
+solvent and ions as matched structure and topology files for molecular
+dynamics, with CHARMM36m additive and Drude polarisable force fields.**
+
+The repository contains both the original standalone script and an equivalent
 split package.
 
 ---
 
 ## Structure Validation
 
-The tables below are a manually maintained snapshot of automatic structure
-tests. Every case is an unsolvated, unfunctionalised, open-ended nanotube built
-with `periodic: false`, two translational repeats, and no end caps. The tests run
-against both the standalone and split implementations. Counts and finite-tube
-coordination must match exactly; generated diameters must be within 0.5% of the
-published value, every C-C bond must be within 2% of the experimental graphite
-spacing, chiral angles must be within 0.01 degrees, and axial lengths must be
-within 2% of the value derived from the published graphite spacing.[^1][^4]
+The tables below give generated structures next to reference values. Every
+case is an unsolvated, unfunctionalised, open-ended nanotube built with
+`periodic: false`, two translational repeats, and no end caps, from both the
+standalone and split implementations. Diameters and chiral angles are compared
+with published values, C-C spacings with the experimental graphite spacing, and
+axial lengths with the value derived from that spacing.[^1][^4]
 
 These are the as-generated coordinates, before energy minimisation; users can
 subsequently relax them with their chosen potential, which may reduce the
@@ -29,11 +33,11 @@ separately as force-field bookkeeping invariants.
 These structures use the additive CHARMM36m aromatic-carbon type `CG2R61`.[^5]
 Lengths are in angstroms.
 
-| Family | `(n,m)` | C cores | C-C bonds | Diameter: generated / published | Chiral angle: generated / published | C-C spacing: min / median / max | Axial length: generated / literature-derived | Result |
-|---|---:|---:|---:|---:|---:|---:|---:|:---:|
-| Armchair | `(8,8)` | 64 / 64 | 80 / 80 | 11.000790 / 10.996[^2] | 30.000 / 30.000[^4] | 1.435888 / 1.439737 / 1.439748[^1] | 4.988306 / 4.925952[^1][^4] | Pass |
-| Zigzag | `(10,0)` | 80 / 80 | 110 / 110 | 7.939136 / 7.958[^2] | 0.000 / 0.000[^4] | 1.435564 / 1.435565 / 1.440000[^1] | 8.640000 / 8.532000[^1][^4] | Pass |
-| Chiral | `(9,4)` | 1064 / 1064 | 1583 / 1583 | 9.155858 / 9.156[^3] | 17.480 / 17.480[^3] | 1.434606 / 1.438762 / 1.439961[^1] | 99.641341 / 98.395824[^1][^4] | Pass |
+| Family | `(n,m)` | C cores | C-C bonds | Diameter: generated / published | Chiral angle: generated / published | C-C spacing: min / median / max | Axial length: generated / literature-derived |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Armchair | `(8,8)` | 64 / 64 | 80 / 80 | 11.000790 / 10.996[^2] | 30.000 / 30.000[^4] | 1.435888 / 1.439737 / 1.439748[^1] | 4.988306 / 4.925952[^1][^4] |
+| Zigzag | `(10,0)` | 80 / 80 | 110 / 110 | 7.939136 / 7.958[^2] | 0.000 / 0.000[^4] | 1.435564 / 1.435565 / 1.440000[^1] | 8.640000 / 8.532000[^1][^4] |
+| Chiral | `(9,4)` | 1064 / 1064 | 1583 / 1583 | 9.155858 / 9.156[^3] | 17.480 / 17.480[^3] | 1.434606 / 1.438762 / 1.439961[^1] | 99.641341 / 98.395824[^1][^4] |
 
 ### Carbon Nanotubes — Drude-Particle
 
@@ -44,11 +48,11 @@ Drude particle and one zero-length core-particle bond; the tested core/particle
 masses are 11.611/0.400 u, charges are +2.709/-2.709 e, and every complete tube
 is neutral.
 
-| Family | `(n,m)` | C cores / Drudes | Core-core / core-Drude bonds | Core diameter: generated / published | Core chiral angle: generated / published | Core-core spacing: min / median / max | Core axial length: generated / literature-derived | Result |
-|---|---:|---:|---:|---:|---:|---:|---:|:---:|
-| Armchair | `(8,8)` | 64 / 64 | 80 / 64 | 11.000790 / 10.996[^2] | 30.000 / 30.000[^4] | 1.435888 / 1.439737 / 1.439748[^1] | 4.988306 / 4.925952[^1][^4] | Pass |
-| Zigzag | `(10,0)` | 80 / 80 | 110 / 80 | 7.939136 / 7.958[^2] | 0.000 / 0.000[^4] | 1.435564 / 1.435565 / 1.440000[^1] | 8.640000 / 8.532000[^1][^4] | Pass |
-| Chiral | `(9,4)` | 1064 / 1064 | 1583 / 1064 | 9.155858 / 9.156[^3] | 17.480 / 17.480[^3] | 1.434606 / 1.438762 / 1.439961[^1] | 99.641341 / 98.395824[^1][^4] | Pass |
+| Family | `(n,m)` | C cores / Drudes | Core-core / core-Drude bonds | Core diameter: generated / published | Core chiral angle: generated / published | Core-core spacing: min / median / max | Core axial length: generated / literature-derived |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Armchair | `(8,8)` | 64 / 64 | 80 / 64 | 11.000790 / 10.996[^2] | 30.000 / 30.000[^4] | 1.435888 / 1.439737 / 1.439748[^1] | 4.988306 / 4.925952[^1][^4] |
+| Zigzag | `(10,0)` | 80 / 80 | 110 / 80 | 7.939136 / 7.958[^2] | 0.000 / 0.000[^4] | 1.435564 / 1.435565 / 1.440000[^1] | 8.640000 / 8.532000[^1][^4] |
+| Chiral | `(9,4)` | 1064 / 1064 | 1583 / 1064 | 9.155858 / 9.156[^3] | 17.480 / 17.480[^3] | 1.434606 / 1.438762 / 1.439961[^1] | 99.641341 / 98.395824[^1][^4] |
 
 [^1]: P. Trucano and R. Chen, “Structure of graphite by neutron diffraction,” *Nature* **258**, 136–137 (1975), experimental C-C spacing 1.422 ± 0.001 Å. [doi:10.1038/258136a0](https://doi.org/10.1038/258136a0)
 [^2]: D. Sánchez-Portal *et al.*, “Ab initio structural, elastic, and vibrational properties of carbon nanotubes,” *Physical Review B* **59**, 12678–12688 (1999), DFT radii 5.498 Å for `(8,8)` and 3.979 Å for `(10,0)`. [doi:10.1103/PhysRevB.59.12678](https://doi.org/10.1103/PhysRevB.59.12678)
@@ -62,7 +66,8 @@ is neutral.
 ## Roadmap
 
 These features are planned, but are not implemented yet. I simply have not had
-the chance to get to them, email me if you have any other suggestions:
+the chance to get to them; suggest others through
+[GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues):
 
 - Fullerene tubes (capped CNTs).
 - Multi-walled carbon nanotubes (MWCNTs).
@@ -92,12 +97,12 @@ output:
 
 ```bash
 python3 src/chirality_kit_monolith/chirality_kit.py \
-  --json examples/chirality_kit_input_dummy_gaps_dry.json
+  --json examples/chirality_kit_input_vacant_sites_dry.json
 ```
 
 ```bash
 PYTHONPATH=src python3 -m chirality_kit \
-  --json examples/chirality_kit_input_dummy_gaps_dry.json
+  --json examples/chirality_kit_input_vacant_sites_dry.json
 ```
 
 Use `--seed 12345` for a reproducible run, `--force-fields
@@ -140,7 +145,7 @@ Both layouts expose the same main classes. From the package, with `src` on the
 Python path:
 
 ```python
-from chirality_kit import Config, Geometry, File_Manager, Force_Field_Manager, Structure_Generator, Functional_Group_Generator, Solution_Generator, IO
+from chirality_kit import Config, Geometry, File_Manager, Force_Field_Manager, Structure_Generator, Functional_Group_Generator, Solution_Generator, Sheet_Builder, IO
 ```
 
 The split package keeps shared runtime defaults in
@@ -155,6 +160,7 @@ force_field_manager.py
 structure_generator.py
 functional_group_generator.py
 solution_generator.py
+sheet_builder.py
 io.py
 ```
 
@@ -272,7 +278,7 @@ unoccupied nanotube atoms:
         "ring-phase-increment": 0.5235987756,
         "groups": [
             {"type": "OH-", "count": 2},
-            {"type": "DUMMY", "count": 2}
+            {"type": "VACANT", "count": 2}
         ]
     }
 ]
@@ -288,17 +294,18 @@ unoccupied nanotube atoms:
 | `groups` | Ordered fragment types and slot counts **per band**. |
 
 In the example, each band has four target slots but only two real `OH-`
-attachments. Across 12 bands that gives 24 attached groups. The two `DUMMY`
-entries preserve gaps in the angular pattern.
+attachments. Across 12 bands that gives 24 attached groups. The two `VACANT`
+entries keep their sites empty in the angular pattern.
 
-#### Ordered gaps with `DUMMY`
+#### Vacant sites
 
-`DUMMY` is a placement-only slot supported in `term.groups` and ring
-`groups`. It participates in the ordered spacing pattern but is removed
-before topology and coordinate files are written; no force-field fragment
-named `DUMMY` is required. A ring dummy leaves its sidewall atom unchanged.
-A terminal dummy is later capped with `H-term` only when
-`term-hydrogenate` is enabled.
+`VACANT` marks an attachment site that is left empty. It is supported in
+`term.groups` and ring `groups`, takes part in the ordered spacing pattern, and
+is removed before topology and coordinate files are written; no force-field
+fragment named `VACANT` is required. A vacant ring site leaves its sidewall
+atom unchanged. A vacant terminal site is capped with `H-term` only when
+`term-hydrogenate` is enabled. Inputs written before 0.8.0 may use `DUMMY`,
+which is read as `VACANT` with a note in the log.
 
 #### Loose sidewall groups
 
@@ -332,7 +339,7 @@ are processed in list order.
 
 See the [full functionalisation tutorial](tutorials/tutorial.md#5-functionalisation)
 for columns, helices, internal/external bands, mixed chemistry, terminal
-patterns, and `DUMMY` gaps.
+patterns, and vacant sites.
 
 ### Solvents and Ions
 
@@ -414,6 +421,95 @@ Note that ions are excluded from a single axis-aligned bounding box around the
 structure, not from a per-atom envelope, so they are kept out of the whole
 cuboid enclosing the nanotube, including its interior channel.
 
+#### `side`
+
+Each solvation group can be placed in part of the box. The values follow the
+terminal groups' `side`, with `"-"` for the negative-z end and `"+"` for the
+positive-z end:
+
+| `side` | Where the group goes |
+| --- | --- |
+| `"full"` | The whole box. The default, used whenever `side` is absent. |
+| `"-"` | Below the tube: from the box end to the lower boundary. |
+| `"+"` | Above the tube: from the upper boundary to the box end. |
+| `"both"` | The `"-"` and `"+"` sides together: nothing around or inside the tube. |
+| `"around-tube"` | The slab around the tube, outside it, between the two boundaries. |
+
+With `system.tube-sheets` the boundaries are the tube-end sheet planes, kept
+`wall-gap` clear; otherwise they are the z range of the `TUBE` residue. A
+`concentration` counts the volume of the group's region. A packed `"both"` group
+is placed on each side in turn, and an explicit `count` is split between the
+sides by their length. The neutralising ions
+of the last ionic group go into that group's region, so to put salt on one side
+and counter-ions on both, use two ionic groups. `side` needs a nanotube. A
+one-sided group in a box with no walls is allowed with a warning, because its
+two sides meet across the periodic boundary.
+
+### Graphene sheets
+
+> **Status:** the graphene walls (box ends since 0.7.0, tube ends since 0.8.0)
+> are still being tested in production simulations. Check a walled build before
+> relying on it, and report anything unexpected through
+> [GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues).
+
+`Sheet_Builder` closes a system with periodic graphene walls of two kinds, used
+alone or together:
+
+- **Box-end walls** (`system.sheets`): a sheet below the lowest atom and one
+  above the highest, so the tube is the only route between the two reservoirs.
+- **Tube-end walls** (`system.tube-sheets`): a sheet at each end of the tube, in
+  the plane of the innermost rim carbon, with a round hole the tube passes
+  through. The solvent in the annulus between them is removed when the system
+  is built.
+
+Every sheet is made of the tube's carbon species (with its Drude particle in
+polarisable force fields), is bonded across the x and y boundaries and is
+exactly neutral. The tube is never bonded to a sheet. Both kinds read one
+`sheets` block; every key is optional and these are the defaults:
+
+```json
+"system": { "...": "...", "sheets": true, "tube-sheets": false },
+"sheets": {
+    "orientation": "zigzag-x",
+    "wall-gap": 3.0,
+    "seam-gap": 15.0,
+    "hole-buffer": 2.5,
+    "rim-offset": 0.0,
+    "resnames": { "z-min": "SHTN", "z-max": "SHTP",
+                  "tube-z-min": "MEMN", "tube-z-max": "MEMP" }
+}
+```
+
+| Key | Used by | Meaning |
+| --- | --- | --- |
+| `orientation` | both | `zigzag-x` puts the zigzag direction (period √3·b, 2.494 Å) along x and the armchair direction (period 3·b, 4.320 Å) along y; `armchair-x` swaps them. |
+| `wall-gap` | both | Box-end walls: distance from each sheet to the outermost atom. Tube-end walls: solvent-free distance around each sheet's carbons. In Å. |
+| `seam-gap` | box-end | Vacuum between the z-max sheet and the periodic image of the z-min sheet, in Å. |
+| `hole-buffer` | tube-end | Added to the tube radius R to give the hole radius, in Å. |
+| `rim-offset` | tube-end | Moves each sheet along the tube from the innermost rim carbon, in Å: positive outward (at most to the outermost rim carbon), negative inward. Default 0. |
+| `resnames` | both | Residue name of each sheet, 1–4 uppercase letters or digits, all different and clear of `TUBE`, `IONS`, `SYS`, the ion and solvent names and `END`. |
+
+**The box is rounded up to the lattice.** A periodic sheet must be a whole
+number of graphene cells, so with walls (or a `sheets` block) the box x and y
+are rounded up to the next whole cell before any solvent goes in, about the box
+centre. The increase is under one cell (2.494 Å or 4.320 Å) per axis, it
+applies to an explicit `size` as well as an `"auto"` box, and the box is never
+made smaller. The log and the `.summary` give the requested and the applied
+size.
+
+**Walls on and off give the same system.** With the same `sheets` block and
+seed, a build with box-end walls and one without are identical in every tube,
+solvent and ion atom.
+
+**The exact box is written out.** Walled builds write a `CRYST1` line in the
+`.pdb`, the box in the `.data` header and a `<system-name>.xsc`. Read the cell
+from the `.xsc`: the atom extents of the `.pdb` are slightly smaller than a
+periodic sheet needs.
+
+The walls need a carbon tube (`CNT` or `CNT-Drude`) that is not periodic. The
+full reference, including the `side` key that places solvent on one side of the
+tube, is in [tutorial Section 7](tutorials/tutorial.md#7-graphene-walls).
+
 ### Output formats
 
 | Requested extension | Output |
@@ -425,7 +521,9 @@ cuboid enclosing the nanotube, including its interior channel.
 
 Every run also writes the internal `.xdata`, a `.log`, a `.summary`, the
 resolved `chirality_kit_input.json` including the RNG seed, and a copy of the
-selected force-field directory.
+selected force-field directory. Builds with a `sheets` block also write the
+exact box as `<system-name>.xsc`, and sheets-on builds keep each sheet's
+coordinates as `<system-name>_sheet_zmin.xyz` and `_sheet_zmax.xyz`.
 
 Two sidecar records are written alongside them:
 
@@ -494,7 +592,7 @@ terminal groups, helical external rings, and random internal sidewall groups:
                 "ring-phase-increment": 0.5235987756,
                 "groups": [
                     {"type": "OH-", "count": 2},
-                    {"type": "DUMMY", "count": 2}
+                    {"type": "VACANT", "count": 2}
                 ]
             }
         ],
@@ -566,6 +664,12 @@ on are tried until the path is unique:
 ├── <system-name>.data      # when requested
 ├── <system-name>.log
 ├── <system-name>.summary
+├── <system-name>.xsc       # with a "sheets" block
+├── <system-name>_sheet_zmin.xyz   # with system.sheets
+├── <system-name>_sheet_zmax.xyz   # with system.sheets
+├── <system-name>_tube_sheet_zmin.xyz   # with system.tube-sheets
+├── <system-name>_tube_sheet_zmax.xyz   # with system.tube-sheets
+├── <system-name>.carved    # with system.tube-sheets: the removed solvent
 ├── restraints.ref          # when .pdb is requested
 ├── chirality_kit_input.json
 └── <force-field>/           # copied parameter and xdata files
@@ -600,6 +704,7 @@ src/
 │   ├── structure_generator.py
 │   ├── functional_group_generator.py
 │   ├── solution_generator.py
+│   ├── sheet_builder.py
 │   └── io.py
 └── force-fields/
     ├── README.md          provenance and licensing of the bundled parameters
@@ -628,7 +733,7 @@ If you copy only the standalone script elsewhere, keep a `force-fields/` folder 
 - [Additional JSON inputs](examples/)
 
 The `examples/` folder is the best source of small, runnable inputs for
-terminal patterns, `DUMMY` gaps, loose placement, and solvated systems.
+terminal patterns, vacant sites, loose placement, and solvated systems.
 
 ---
 
@@ -652,10 +757,21 @@ authors of any force field you simulated with as well.
 
 ---
 
+## Use of AI
+
+AI coding assistants were used in developing this repository, for writing and
+testing code and for debugging, always under the author’s direction. Every
+single line before the public release (yes, even the doc strings) was written by
+the author (yours truly), but the project has now grown in scope, hence I cannot
+continue to maintain it alone. Nothing was added autonomously, as every change
+was reviewed and accepted by me. All issues and feature requests are read and
+answered by a single person (me).
+
+---
+
 ## Contact & support
 
 Please report bugs, ask questions, and suggest features through
 [GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues).
 
-This project is maintained by one person. If an issue is not suitable, email
-stefan.zhikharev@warwick.ac.uk.
+This project is maintained by one person.

@@ -10,6 +10,7 @@ from .force_field_manager import Force_Field_Manager
 from .functional_group_generator import Functional_Group_Generator
 from .geometry import Geometry
 from .io import IO
+from .sheet_builder import Sheet_Builder
 from .solution_generator import Solution_Generator
 from .structure_generator import Structure_Generator
 
@@ -88,6 +89,7 @@ def full_run():
     functionalisation = Functional_Group_Generator(force_field_manager, file_manager, config, geometry)
     chirality = Structure_Generator(force_field_manager, file_manager, config, geometry)
     solvation = Solution_Generator(force_field_manager, file_manager, config, geometry)
+    sheets = Sheet_Builder(force_field_manager, file_manager, config, geometry)
 
     io = IO(
         force_field_manager,
@@ -98,6 +100,7 @@ def full_run():
         config,
         geometry,
         json_input=json_input,
+        sheets=sheets,
     )
     io.run()
 

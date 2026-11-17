@@ -77,6 +77,8 @@ All nanotube atom types live in the `Masses` section of that one fragment. chira
 
 If the force field says `Fragment Nanotube-Species CNT-Drude` but the JSON requests `"type": "CNT"`, the build aborts early and asks you to choose a matching force field or change `nanotube.type`.
 
+**Graphene walls reuse this entry.** The box-end sheets (`system.sheets`) and the holed tube-end sheets (`system.tube-sheets`) are built from the primary species of `Nanotube-Species`, its first atom type, with its Drude particle in a polarisable force field, and their C–C bond length comes from the same carbon bond settings as the tube. A force field that builds carbon tubes therefore needs nothing extra for sheets: no fragment, no new atom type, and no new bond, angle or dihedral coefficients beyond the tube's own sp2 ring terms. The bare edge carbons of a tube-end sheet's hole use the same type and stay neutral. Each sheet is its own residue. Its name (`SHTN` and `SHTP` at the box ends, `MEMN` and `MEMP` at the tube ends, by default) must not clash with the names the writers already use: `TUBE`, `IONS`, the segment name `SYS`, the ion residue names (`POT`, `CLA`, …) and the solvent labels. It must also not contain `END`, which the `restraints.ref` writer reads as the end of the atom records.
+
 ### H-term
 
 If you want hydrogenation of nanotube edge carbons (via `"term-hydrogenate": true` in the `functionalisation` block, or via explicit `H-term` / `H+` groups), you must define an `H-term` fragment. chirality-kit routes end-cap hydrogen placement through the `H-term` fragment label internally.
@@ -88,15 +90,16 @@ Fragment H-term
 
 Without this fragment, any run requesting hydrogenation will raise a validation error.
 
-### DUMMY spacing slots
+### Vacant sites
 
-`DUMMY` is a reserved configuration value for ordered gaps between terminal
+`VACANT` is a reserved configuration value for an empty site between terminal
 or ring functional groups. It is not a physical fragment, so do not add a
-`Fragment DUMMY` section to a force-field file. It participates in attachment
+`Fragment VACANT` section to a force-field file. It takes part in attachment
 site spacing and is removed before molecular files are written. With
-`term-hydrogenate: true`, a dummy terminal position is subsequently capped by
-the ordinary `H-term` fragment. `DUMMY` itself never consumes an index or
-creates a record in any atom or bonded section.
+`term-hydrogenate: true`, a vacant terminal site is then capped by the
+ordinary `H-term` fragment. `VACANT` itself never consumes an index or creates
+a record in any atom or bonded section. `DUMMY`, its name before 0.8.0, is
+read the same way.
 
 ### The c-idx placeholder
 

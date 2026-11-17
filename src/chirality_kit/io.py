@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._runtime import my_log_file, set_logger
-from .functional_group_generator import DUMMY_FG_TYPE, TERM_GROUP_FIELDS, TERM_SIDES
+from .functional_group_generator import (LEGACY_VACANT_FG_TYPE, TERM_GROUP_FIELDS, TERM_SIDES,
+                                         VACANT_FG_TYPE, VACANT_FG_TYPES)
+from .sheet_builder import SHEET_DEFAULTS, SHEET_ORIENTATIONS, SHEET_SIDES, TUBE_SHEET_SIDES, Sheet_Builder
 
 
 XDATA_SECTION_SETTINGS = {
@@ -30,6 +32,16 @@ XDATA_SECTION_SETTINGS = {
 
 class IO: 
 
+    # Sheet state, at the values __init__ and every build start from. Declared on
+    # the class too, so an IO made without __init__ (test shells) still reads
+    # "no sheets" instead of failing on a missing attribute.
+    _sheet_cfg = None
+    _sheet_lattice = None
+    _sheet_report = None
+    _tube_frame = None
+    _tube_sheet_report = None
+    _carved_count = 0
+
     def __init__(self,
                  force_field_manager: Force_Field_Manager,
                  file_manager: File_Manager,
@@ -38,7 +50,8 @@ class IO:
                  functionalisation: Functional_Group_Generator,
                  config: Config,
                  geometry: Geometry,
-                 json_input: str | dict | None = None) -> None:
+                 json_input: str | dict | None = None,
+                 sheets: Sheet_Builder | None = None) -> None:
 
         self.force_field_manager : Force_Field_Manager = force_field_manager
         self.file_manager : File_Manager = file_manager
@@ -46,6 +59,10 @@ class IO:
         self.structure : Structure_Generator = structure
         self.solvation : Solution_Generator = solvation
         self.functionalisation : Functional_Group_Generator = functionalisation
+        self.sheets : Sheet_Builder = (
+            sheets if sheets is not None
+            else Sheet_Builder(force_field_manager, file_manager, config, geometry)
+        )
 
         self.geometry : Geometry = geometry
         self.config : Config = config
@@ -54,6 +71,13 @@ class IO:
 
         self.box_size = None
         self._psf_charge_neutrality_report = None
+        self._sheet_cfg = None      # resolved "sheets" block, None when absent
+        self._sheet_lattice = None  # lattice fit of the box x and y
+        self._sheet_report = None   # what add_sheets built, None when sheets are off
+        self._tube_frame = None     # tube axis, radius and rim planes, when needed
+        self._tube_sheet_report = None  # what add_tube_sheets built, None when off
+        self._around_residues = set()   # residues of around-tube solvent groups
+        self._carved_count = 0          # solvent residues removed for the tube-end sheets
 
         self.initialise_LOG(json_input)
         self.initialise_JSON(json_input)
@@ -275,6 +299,7 @@ class IO:
         # ============================
 
         if '.pdb' in self.json_input['settings']["output_types"]: self.write_pdb_restraints_file()
+        if self.config.fixed_box is not None: self.write_xsc_file()
 
         # ============================
         # SUMMARY FILE
@@ -368,6 +393,19 @@ class IO:
             solvation         = self.json_input['system']['solvation'],
         )
         my_log_file.info("Build Validation Successful")
+
+        # A "sheets" block, or system.sheets, fits the box x and y to the graphene
+        # lattice. Only system.sheets adds the sheets themselves (step 3b).
+        # Every build starts with no sheet state, so a reused IO object is clean.
+        self.config.fixed_box = None
+        self.config.residue_name_by_index = {}
+        self._sheet_lattice = None
+        self._sheet_report = None
+        self._tube_frame = None
+        self._tube_sheet_report = None
+        self._around_residues = set()
+        self._carved_count = 0
+        self._sheet_cfg = self._sheet_settings()
 
         # -------------------------------------------------------------------------
         # 1. NANOTUBE GENERATION
@@ -550,6 +588,27 @@ class IO:
         # Save the bare structure now; ion placement can skip the full solvated file later.
         self.solvation.write_structure_record()
 
+        # Where the tube is, for the solvent sides and the tube-end sheets.
+        if self.json_input['system']['nanotube'] == True and (
+                self._tube_sheets_on() or self._solvent_sides_used()):
+            if self._tube_sheets_on():
+                self._tube_frame = self.sheets.tube_frame(
+                    rim_offset=float(self._sheet_cfg['rim-offset']),
+                    min_separation=2.0 * float(self._sheet_cfg['wall-gap']))
+            else:
+                self._tube_frame = self.sheets.tube_frame()
+            frame = self._tube_frame
+            my_log_file.info(
+                f"Tube frame: axis ({frame['axis'][0]:.4f}, {frame['axis'][1]:.4f}), "
+                f"R = {frame['radius']:.4f} Ang, innermost rim carbons at z = {frame['rim_lo']:.4f} "
+                f"and {frame['rim_hi']:.4f} Ang, TUBE residue from z = {frame['tube_z'][0]:.4f} "
+                f"to {frame['tube_z'][1]:.4f} Ang."
+            )
+            if frame['rim_offset']:
+                my_log_file.info(
+                    f"rim-offset {frame['rim_offset']:+.3f} Ang: tube-end sheet planes at "
+                    f"z = {frame['z_lo']:.4f} and {frame['z_hi']:.4f} Ang.")
+
 
         # -------------------------------------------------------------------------
         # 3. SOLVATION
@@ -557,10 +616,12 @@ class IO:
 
         my_log_file.info(f"ADDING SOLVENTS...   {self.json_input['system']['solvation']}")
 
+        requested_pad_xy = None
         if self.box_size == "auto":
             
             structure_info, index_info, type_info = self.force_field_manager.get_atom_positions_residue(residue=new_res_idx)       
             PBC_pad_xy, PBC_pad_z = self._resolve_auto_box_padding()
+            requested_pad_xy = PBC_pad_xy
             structure_info = np.array(structure_info)
             x_max, x_min = np.max(structure_info[:,0]), np.min(structure_info[:,0])
             y_max, y_min = np.max(structure_info[:,1]), np.min(structure_info[:,1])
@@ -569,6 +630,12 @@ class IO:
                             [x_min - PBC_pad_xy, x_max + PBC_pad_xy],
                             [y_min - PBC_pad_xy, y_max + PBC_pad_xy],
                             [z_min - PBC_pad_z, z_max + PBC_pad_z] ]
+
+        # The solvent must fill an x and y that are whole graphene cells, so the
+        # padding is scaled up to the lattice before anything is placed.
+        if self._sheet_cfg is not None:
+            self._fit_box_to_sheet_lattice(requested_pad_xy)
+            self.file_manager.standardise_top_counts()
 
         if self.json_input['system']['solvation'] == True:
 
@@ -602,13 +669,31 @@ class IO:
                         f"{effective_box[2][1]-effective_box[2][0]:.2f} Angstrom)."
                     )
 
+                # side: full keeps the whole box; the other sides cut it in z.
+                side = sol.get('side', 'full')
+                passes = self._side_passes(sol, effective_box)
+                if side != 'full':
+                    for _, part_box in passes:
+                        my_log_file.info(
+                            f"Solvent '{sol['type']}': side {side}, z from "
+                            f"{part_box[2][0]:.3f} to {part_box[2][1]:.3f} Angstrom."
+                        )
+                residues_before = (int(self.file_manager.find_last_residue())
+                                   if side == 'around-tube' else None)
+
                 n_atom_prior = self.file_manager.find_number_of_entries_in_section('Atoms')
-                self.solvation.write_solvent(
-                    sol,
-                    box_size = effective_box,
-                    bridson_params= self.json_input['solvation'].get('bridson_params', None),
-                    is_last_ionic= (group_idx == last_ionic_idx),
-                )
+                for part, part_box in passes:
+                    self.solvation.write_solvent(
+                        part,
+                        box_size = part_box,
+                        bridson_params= self.json_input['solvation'].get('bridson_params', None),
+                        is_last_ionic= (group_idx == last_ionic_idx),
+                        no_go_slab= self._ion_slab(sol),
+                    )
+                if residues_before is not None:
+                    self._drop_lumen_residues(residues_before)
+                    last_residue = int(self.file_manager.find_last_residue())
+                    self._around_residues.update(range(residues_before + 1, last_residue + 1))
                 n_atoms_after = self.file_manager.find_number_of_entries_in_section('Atoms')
 
                 if sol["placement"] == "ionic":
@@ -620,6 +705,36 @@ class IO:
                     new_solvs = sum(1 for atom in self.force_field_manager.get_atom_positions_all()[2] if sol['type'] in atom)
                     self._log_solvation_stats(sol, n_atom_prior, n_atoms_after, new_solvs)
                     pieces.add(sol['type'])
+
+
+        # -------------------------------------------------------------------------
+        # 3a. TUBE-END SHEETS
+        # -------------------------------------------------------------------------
+
+        # The solvent between the sheet planes outside the tube, and any within
+        # wall-gap of a sheet carbon, goes first. The sheets use no random numbers.
+        if self._tube_sheets_on():
+            my_log_file.info("ADDING TUBE-END SHEETS...")
+            tube_sheets = self.sheets.tube_sheet_sites(self.box_size, self._sheet_cfg, self._tube_frame)
+            self._carve_for_tube_sheets(tube_sheets)
+            self._tube_sheet_report = self.sheets.add_tube_sheets(
+                self._sheet_cfg, tube_sheets, self._tube_frame)
+            self._tube_sheet_report["carved"] = self._carved_count
+            self.file_manager.standardise_top_counts()
+
+
+        # -------------------------------------------------------------------------
+        # 3b. SHEETS
+        # -------------------------------------------------------------------------
+
+        # Added last and without random numbers, so a sheets-off build with the
+        # same "sheets" block and seed matches this one in every other atom.
+        if self.json_input['system'].get('sheets', False) is True:
+            my_log_file.info("ADDING SHEETS...")
+            self._sheet_report = self.sheets.add_sheets(self.box_size, self._sheet_cfg)
+            self.box_size = self._sheet_report["box"]
+            self.config.fixed_box = [list(axis) for axis in self.box_size]
+            self.file_manager.standardise_top_counts()
 
 
         # -------------------------------------------------------------------------
@@ -702,7 +817,7 @@ class IO:
             # --- Term groups ---
             term = func.get("term", {})
             for fg in term.get("groups", []):
-                if fg["type"] == DUMMY_FG_TYPE:
+                if fg["type"] in VACANT_FG_TYPES:
                     continue
                 count = fg.get("count", 0)
                 if count > 0:
@@ -713,7 +828,7 @@ class IO:
                 ring_multiplier = ring.get("ring-count", 0)
 
                 for fg in ring.get("groups", []):
-                    if fg["type"] == DUMMY_FG_TYPE:
+                    if fg["type"] in VACANT_FG_TYPES:
                         continue
                     count = fg.get("count", 0)
                     if count > 0 and ring_multiplier > 0:
@@ -760,6 +875,15 @@ class IO:
             if sol_parts:
                 # join separately so trailing "_" behavior is clean
                 parts.append("_".join(sol_parts))
+
+        # --- Sheets (a "sheets" block alone gives the lattice-matched box) ---
+        tube_sheets = j["system"].get("tube-sheets") is True
+        if j["system"].get("sheets") is True:
+            parts.append("SHEETS")
+        elif "sheets" in j and not tube_sheets:
+            parts.append("LATTICE")
+        if tube_sheets:
+            parts.append("TUBESHEETS")
 
         return "_".join(parts)
     
@@ -1277,7 +1401,7 @@ class IO:
             out.append(f"  term-start-highest-x : {term_cfg.get('term-start-highest-x', False)}")
             term_groups = [
                 g for g in term_cfg.get('groups', [])
-                if g.get('count', 0) > 0 and g.get('type') != DUMMY_FG_TYPE
+                if g.get('count', 0) > 0 and g.get('type') not in VACANT_FG_TYPES
             ]
             if term_groups:
                 out.append("  term groups:")
@@ -1290,7 +1414,7 @@ class IO:
             for r_idx, ring in enumerate(rings_cfg):
                 groups_here = [
                     g for g in ring.get('groups', [])
-                    if g.get('count', 0) > 0 and g.get('type') != DUMMY_FG_TYPE
+                    if g.get('count', 0) > 0 and g.get('type') not in VACANT_FG_TYPES
                 ]
                 if not groups_here:
                     continue
@@ -1337,6 +1461,54 @@ class IO:
                     f"  x : {b[0][0]:.3f} to {b[0][1]:.3f} Ang  ({b[0][1]-b[0][0]:.3f} Ang)",
                     f"  y : {b[1][0]:.3f} to {b[1][1]:.3f} Ang  ({b[1][1]-b[1][0]:.3f} Ang)",
                     f"  z : {b[2][0]:.3f} to {b[2][1]:.3f} Ang  ({b[2][1]-b[2][0]:.3f} Ang)", ""]
+
+        if self._sheet_lattice is not None:
+            lat = self._sheet_lattice
+            out.append("[Sheets]")
+            out.append(f"  graphene cells : {lat['nx']} x {lat['ny']} "
+                       f"({self._sheet_cfg['orientation']}, b = {lat['bond_length']:.4f} Ang)")
+            out.append(f"  cell periods   : {lat['period_x']:.4f} x {lat['period_y']:.4f} Ang")
+            out.append(f"  box x, y       : {lat['lx']:.4f} x {lat['ly']:.4f} Ang")
+            if lat['requested_pad_xy'] is not None:
+                out.append(f"  xy padding     : {lat['requested_pad_xy']:.3f} Ang requested -> "
+                           f"{lat['requested_pad_xy'] + lat['raised_x']:.3f} (x), "
+                           f"{lat['requested_pad_xy'] + lat['raised_y']:.3f} (y) Ang")
+            else:
+                out.append(f"  xy scaled up   : +{2 * lat['raised_x']:.3f} (x), "
+                           f"+{2 * lat['raised_y']:.3f} (y) Ang")
+            report = self._sheet_report
+            if report is None and self._tube_sheet_report is not None:
+                out.append("  box-end sheets : off")
+            elif report is None:
+                out.append("  sheets         : off (lattice-matched box only)")
+            else:
+                for side in SHEET_SIDES:
+                    drudes = report['drudes_per_sheet'][side]
+                    out.append(f"  {report['resnames'][side]:<4s} ({side})   : {report['atoms_per_sheet'][side]} "
+                               f"{report['atom_type']} atoms"
+                               + (f" + {drudes} Drude particles" if drudes else "")
+                               + f" at z = {report['z'][side]:.4f} Ang")
+                out.append(f"  wall-gap       : {float(self._sheet_cfg['wall-gap']):.3f} Ang")
+                out.append(f"  seam-gap       : {float(self._sheet_cfg['seam-gap']):.3f} Ang")
+                out.append(f"  sheet charge   : {report['charge']:+.6f} e")
+            tube = self._tube_sheet_report
+            if tube is not None:
+                for side in TUBE_SHEET_SIDES:
+                    drudes = tube['drudes_per_sheet'][side]
+                    out.append(f"  {tube['resnames'][side]:<4s} ({side}) : {tube['atoms_per_sheet'][side]} "
+                               f"{tube['atom_type']} atoms"
+                               + (f" + {drudes} Drude particles" if drudes else "")
+                               + f" at z = {tube['z'][side]:.4f} Ang, {tube['removed'][side]} sites "
+                               f"removed for the hole, {tube['edge'][side]} edge carbons")
+                out.append(f"  hole radius    : {tube['hole_radius']:.4f} Ang (tube R + hole-buffer "
+                           f"{float(self._sheet_cfg['hole-buffer']):.3f} Ang)")
+                out.append(f"  rim-offset     : {self._tube_frame['rim_offset']:+.3f} Ang from the innermost "
+                           f"rim carbons (z = {self._tube_frame['rim_lo']:.4f} and "
+                           f"{self._tube_frame['rim_hi']:.4f} Ang)")
+                out.append(f"  closest to tube: {tube['min_tube_distance']:.4f} Ang")
+                out.append(f"  carved         : {tube['carved']} solvent residues (listed in .carved)")
+                out.append(f"  tube-end charge: {tube['charge']:+.6f} e")
+            out.append("")
 
         n_atoms = self.file_manager.find_number_of_entries_in_section("Atoms")
         total   = self.force_field_manager._round_charge(
@@ -1415,9 +1587,11 @@ class IO:
     def _check_pbc_box(self):
 
         '''
-        Check that the z-padding between the nanotube and the box boundary is
-        sufficient to avoid periodic image interactions (minimum 10 Ang). Logs
-        a warning if either side is too short.
+        Check that the z-padding between the TUBE residue and the box boundary
+        is sufficient to avoid periodic image interactions (minimum 10 Ang).
+        The TUBE residue is the tube with its groups and caps, as the PDB and
+        PSF name it; sheets, solvent and ions never count. Logs a warning if
+        either side is too short.
 
         Parameters:
         ----------
@@ -1437,9 +1611,20 @@ class IO:
 
         min_pad = 10.0
 
-        atom_pos, _, atom_types, _ = self.force_field_manager.get_atom_positions_all()
-        tube_types = set(self.config.default_species_by_type)
-        tube_mask = np.array([t in tube_types for t in atom_types])
+        atom_pos, _, atom_types, atom_residues = self.force_field_manager.get_atom_positions_all()
+
+        # Same naming rules as the PDB and PSF writers.
+        def _in_tube_residue(atom_type, residue_index):
+            if residue_index in self.config.residue_name_by_index:
+                return False
+            parts = atom_type.split('-')
+            if len(parts) > 1:
+                return parts[1] == "DRUD" and parts[0] not in self.config.dions
+            return not (atom_type in self.config.ions
+                        or atom_type in self.config.dions
+                        or atom_type in self.config.dion_particles)
+
+        tube_mask = np.array([_in_tube_residue(t, r) for t, r in zip(atom_types, atom_residues)])
         if not tube_mask.any():
             return
 
@@ -1455,6 +1640,18 @@ class IO:
                f"  Box z-extent  : {z_box_lo:.2f} to {z_box_hi:.2f} Ang",
                f"  Padding lo    : {pad_lo:.2f} Ang",
                f"  Padding hi    : {pad_hi:.2f} Ang"]
+
+        # With tube-end sheets each reservoir runs from its sheet to the box end
+        # sheet, or round the periodic boundary to the other side without one.
+        tube = self._tube_sheet_report
+        if tube is not None:
+            ends = self._sheet_report['z'] if self._sheet_report is not None else None
+            low_end = ends['z-min'] if ends else z_box_lo
+            high_end = ends['z-max'] if ends else z_box_hi
+            out.append(f"  Reservoir lo  : {low_end:.2f} to {tube['z']['tube-z-min']:.2f} Ang")
+            out.append(f"  Reservoir hi  : {tube['z']['tube-z-max']:.2f} to {high_end:.2f} Ang")
+            if ends is None:
+                out.append("  Reservoirs meet across the periodic z boundary.")
 
         warn = (pad_lo < min_pad or pad_hi < min_pad)
         if warn:
@@ -1515,6 +1712,283 @@ class IO:
             PBC_pad_z = recommended_pad
 
         return PBC_pad_xy, PBC_pad_z
+
+    def _sheet_settings(self):
+
+        '''
+        Resolve the "sheets" block. A build is lattice matched when the block is
+        present or system.sheets or system.tube-sheets is true; the box-end
+        sheets are added only when system.sheets is true, the tube-end sheets
+        only when system.tube-sheets is true.
+
+        Parameters:
+        ----------
+        None
+
+        Returns:
+        -------
+        sheet_cfg : dict or None
+            The block merged over SHEET_DEFAULTS, or None when neither is set.
+
+        Raises:
+        ------
+        None
+        '''
+
+        block = self.json_input.get('sheets')
+        if (block is None and self.json_input['system'].get('sheets', False) is not True
+                and not self._tube_sheets_on()):
+            return None
+        return Sheet_Builder.resolve_config(block)
+
+    def _fit_box_to_sheet_lattice(self, requested_pad_xy=None):
+
+        '''
+        Scale the box x and y up to whole graphene cells about their centres,
+        before any solvent is placed, and record the exact box. For an auto box
+        this raises the xy padding on each axis just enough; an explicit size is
+        scaled up the same way. Nothing is ever made smaller.
+
+        Parameters:
+        ----------
+        requested_pad_xy : float, optional
+            The xy padding of an auto box after _resolve_auto_box_padding, for the
+            log and summary; None for an explicit size.
+
+        Returns:
+        -------
+        None
+
+        Raises:
+        ------
+        None
+        '''
+
+        bond_length = self.config.get_default_species_bond_param("bond_length", 1.44)
+        before = [[float(lo), float(hi)] for lo, hi in self.box_size]
+        fitted = self.sheets.lattice_box_xy(before[0], before[1], bond_length,
+                                            self._sheet_cfg["orientation"])
+        self.box_size = [fitted["x"], fitted["y"], before[2]]
+        self.config.fixed_box = [list(axis) for axis in self.box_size]
+
+        raised_x = ((fitted["x"][1] - fitted["x"][0]) - (before[0][1] - before[0][0])) / 2.0
+        raised_y = ((fitted["y"][1] - fitted["y"][0]) - (before[1][1] - before[1][0])) / 2.0
+        self._sheet_lattice = {
+            "nx": fitted["nx"], "ny": fitted["ny"],
+            "period_x": fitted["period_x"], "period_y": fitted["period_y"],
+            "lx": fitted["x"][1] - fitted["x"][0], "ly": fitted["y"][1] - fitted["y"][0],
+            "raised_x": raised_x, "raised_y": raised_y,
+            "requested_pad_xy": requested_pad_xy,
+            "bond_length": bond_length,
+        }
+
+        if requested_pad_xy is not None:
+            msg = (f"XY padding raised {requested_pad_xy:.2f} -> {requested_pad_xy + raised_x:.2f} Ang (x), "
+                   f"{requested_pad_xy + raised_y:.2f} Ang (y) to fit "
+                   f"{fitted['nx']} x {fitted['ny']} graphene cells")
+        else:
+            msg = (f"XY box scaled up by {2 * raised_x:.3f} Ang (x) and {2 * raised_y:.3f} Ang (y) "
+                   f"to fit {fitted['nx']} x {fitted['ny']} graphene cells")
+        my_log_file.info(f"{msg}: {self._sheet_lattice['lx']:.4f} x {self._sheet_lattice['ly']:.4f} Ang.")
+
+    def _tube_sheets_on(self):
+
+        return self.json_input['system'].get('tube-sheets', False) is True
+
+    def _solvent_sides_used(self):
+
+        if self.json_input['system'].get('solvation', False) is not True:
+            return False
+        return any(group.get('side', 'full') != 'full'
+                   for group in self.json_input.get('solvation', {}).get('groups', []))
+
+    def _side_bounds(self):
+
+        '''
+        The z boundaries that split the box into solvent sides: the tube-end
+        sheet planes kept wall-gap clear when those sheets are on, otherwise the
+        z range of the TUBE residue.
+
+        Returns:
+        -------
+        bounds : tuple
+            (lower, upper) bounding the - and + sides, and (inner_lo, inner_hi)
+            bounding around-tube.
+        '''
+
+        frame = self._tube_frame
+        if self._tube_sheets_on():
+            clear = float(self._sheet_cfg['wall-gap'])
+            return ((frame['z_lo'] - clear, frame['z_hi'] + clear),
+                    (frame['z_lo'] + clear, frame['z_hi'] - clear))
+        return (tuple(frame['tube_z']), tuple(frame['tube_z']))
+
+    def _side_box(self, box, side):
+
+        '''
+        Cut a solvation box in z to one solvent side (see _side_bounds): "+"
+        runs from the upper boundary to the box end, "-" from the box end to the
+        lower boundary, and "around-tube" lies between the inner boundaries.
+
+        Parameters:
+        ----------
+        box : list of three [lo, hi]
+            The group's box, after any pad.
+        side : str
+            '+', '-' or 'around-tube'.
+
+        Returns:
+        -------
+        box : list of three [lo, hi]
+            The same x and y, the z range of the side.
+
+        Raises:
+        ------
+        ValueError
+            If the side leaves no room in z.
+        '''
+
+        (z_lo, z_hi), (inner_lo, inner_hi) = self._side_bounds()
+        box_lo, box_hi = float(box[2][0]), float(box[2][1])
+        if side == '+':
+            z_range = [max(box_lo, z_hi), box_hi]
+        elif side == '-':
+            z_range = [box_lo, min(box_hi, z_lo)]
+        else:
+            z_range = [max(box_lo, inner_lo), min(box_hi, inner_hi)]
+        if z_range[1] - z_range[0] <= 0.0:
+            raise ValueError(f"Solvent side '{side}' leaves no room: z from {z_range[0]:.3f} "
+                             f"to {z_range[1]:.3f} Ang.")
+        return [list(box[0]), list(box[1]), z_range]
+
+    def _side_passes(self, sol, box):
+
+        '''
+        The placements for one solvation group: (group, box) pairs. full and
+        every ionic group are one pass over their box (an ionic "both" group
+        avoids the middle through _ion_slab). A packed "both" group is placed
+        twice, on the - side and on the + side, so a concentration counts each
+        side's volume; an explicit count is split between them by volume.
+        '''
+
+        side = sol.get('side', 'full')
+        if side == 'full' or (side == 'both' and sol.get('placement') == 'ionic'):
+            return [(sol, box)]
+        if side != 'both':
+            return [(sol, self._side_box(box, side))]
+
+        lower, upper = self._side_box(box, '-'), self._side_box(box, '+')
+        if sol.get('count') is None:
+            return [(sol, lower), (sol, upper)]
+        span_lo, span_hi = lower[2][1] - lower[2][0], upper[2][1] - upper[2][0]
+        total = int(sol['count'])
+        count_lo = int(round(total * span_lo / (span_lo + span_hi)))
+        parts = [(dict(sol, count=count_lo), lower), (dict(sol, count=total - count_lo), upper)]
+        return [(part, part_box) for part, part_box in parts if part['count'] > 0]
+
+    def _ion_slab(self, sol):
+
+        '''
+        The slab an ionic group must avoid, or None.
+
+        - A "both" group avoids the whole middle between the side boundaries.
+        - With tube-end sheets every other ionic group except an around-tube
+          one avoids the slab between the sheet planes, widened by wall-gap,
+          outside the tube radius, so the annulus carve never meets an ion and
+          no ion is deleted.
+
+        Returns:
+        -------
+        slab : tuple or None
+            (z_lo, z_hi, axis_x, axis_y, radius) for Solution_Generator; a
+            radius of -1 covers the whole slab.
+        '''
+
+        side = sol.get('side', 'full')
+        if sol.get('placement') != 'ionic' or side == 'around-tube':
+            return None
+        frame = self._tube_frame
+        if side == 'both':
+            (z_lo, z_hi), _ = self._side_bounds()
+            return (z_lo, z_hi, frame['axis'][0], frame['axis'][1], -1.0)
+        if not self._tube_sheets_on():
+            return None
+        clear = float(self._sheet_cfg['wall-gap'])
+        return (frame['z_lo'] - clear, frame['z_hi'] + clear,
+                frame['axis'][0], frame['axis'][1], frame['radius'])
+
+    def _drop_lumen_residues(self, residues_before):
+
+        '''
+        Remove the residues of the group just placed (those numbered above
+        residues_before) that have an atom inside the tube radius, so an
+        around-tube group keeps out of the lumen. Ions are never removed; the
+        ionic no-go cuboid already keeps them out of the tube.
+        '''
+
+        positions, indexes, types, residues = self.force_field_manager.get_atom_positions_all()
+        positions = np.asarray(positions, dtype=float)
+        residues = np.asarray(residues)
+        frame = self._tube_frame
+        ion_types = set(self.config.ions) | set(self.config.dions) | set(self.config.dion_particles)
+
+        r = np.hypot(positions[:, 0] - frame['axis'][0], positions[:, 1] - frame['axis'][1])
+        inside = set(residues[(residues > residues_before) & (r < frame['radius'])].tolist())
+        drop = set()
+        for residue in inside:
+            members = np.nonzero(residues == residue)[0]
+            if not any(types[i] in ion_types for i in members):
+                drop.update(int(indexes[i]) for i in members)
+        if drop:
+            self.force_field_manager.obliterate_atoms(drop)
+            my_log_file.info(f"around-tube: removed {len(drop)} atoms of molecules placed inside the tube.")
+
+    def _carve_for_tube_sheets(self, sheets):
+
+        '''
+        Remove the solvent the tube-end sheets would enclose or overlap (see
+        Sheet_Builder.annulus_residues) and list it in <system>.carved. Raises
+        rather than delete an ion, so the charge is never changed.
+
+        Parameters:
+        ----------
+        sheets : dict
+            From Sheet_Builder.tube_sheet_sites.
+
+        Returns:
+        -------
+        None
+
+        Raises:
+        ------
+        ValueError
+            If an ion lies where the carve would remove it.
+        '''
+
+        carved = self.sheets.annulus_residues(
+            sheets, self._tube_frame, float(self._sheet_cfg['wall-gap']), self._around_residues)
+        ions = [entry for entry in carved if entry['ion']]
+        if ions:
+            listed = ", ".join(f"residue {entry['residue']} ({entry['type']})" for entry in ions)
+            raise ValueError(f"Tube-end sheets: ions lie where the annulus is cleared: {listed}. "
+                             f"Ions are never deleted; check the ionic groups' side.")
+
+        path = os.path.join(self.config.system_folder, f"{self.config.system_name}.carved")
+        with open(path, "w") as f:
+            f.write("# Solvent residues removed before the tube-end sheets went in: those with an atom\n")
+            f.write("# between the sheet planes outside the tube, or within wall-gap of a sheet carbon.\n")
+            f.write("# Residue numbers are the internal ones before the removal.\n")
+            f.write("# residue  first-atom-type   atoms      mean-z\n")
+            for entry in carved:
+                f.write(f"{entry['residue']:>9d}  {entry['type']:<16s} {len(entry['atoms']):>6d}  "
+                        f"{entry['z']:>10.4f}\n")
+
+        atoms = {atom for entry in carved for atom in entry['atoms']}
+        if atoms:
+            self.force_field_manager.obliterate_atoms(atoms)
+        self._carved_count = len(carved)
+        my_log_file.info(f"Tube-end sheets: removed {len(carved)} solvent residues "
+                         f"({len(atoms)} atoms); listed in {path}.")
 
 
     # -------------------------------------------------------------------------
@@ -1743,7 +2217,7 @@ class IO:
                         f"Invalid term side {side!r}; expected 'both', '-', or '+'."
                     )
 
-                if (fg_type != DUMMY_FG_TYPE
+                if (fg_type not in VACANT_FG_TYPES
                         and fg_type not in available_fragments
                         and count > 0):
                     msg = (
@@ -1759,6 +2233,16 @@ class IO:
                     my_log_file.error(msg)
                     raise ValueError(msg)
                 
+            # "DUMMY" is the name VACANT had before 0.8.0; it is read the same way.
+            legacy = sum(1 for g in func.get('term', {}).get('groups', [])
+                         if g.get('type') == LEGACY_VACANT_FG_TYPE)
+            legacy += sum(1 for ring in func.get('rings', []) for g in ring.get('groups', [])
+                          if g.get('type') == LEGACY_VACANT_FG_TYPE)
+            if legacy:
+                my_log_file.warning(
+                    f'"{LEGACY_VACANT_FG_TYPE}" is now called "{VACANT_FG_TYPE}"; the input is read '
+                    f'the same way and builds the same system. Use "{VACANT_FG_TYPE}" in new inputs.')
+
             # hydrogenation needs the H-term fragment
             if func.get('term', {}).get('term-hydrogenate', False):
                 if 'H-term' not in available_fragments:
@@ -1785,7 +2269,7 @@ class IO:
                     fg_type = group['type']
                     count = int(group['count'])
 
-                    if (fg_type != DUMMY_FG_TYPE
+                    if (fg_type not in VACANT_FG_TYPES
                             and fg_type not in available_fragments
                             and count > 0):
                         msg = (
@@ -1935,6 +2419,183 @@ class IO:
                     f"their spacing. Every other pair is checked and resolved by priority."
                 )
 
+        # ------------------------------------------------------------------
+        # 7. Sheets
+        # ------------------------------------------------------------------
+        self._validate_sheets()
+        self._validate_solvent_sides()
+
+    def _validate_sheets(self):
+
+        '''
+        Validate system.sheets, system.tube-sheets and the optional "sheets"
+        block: a carbon nanotube that is not periodic, lattice-xy on, a
+        supported orientation, positive gaps, a hole-buffer of zero or more, a
+        numeric rim-offset, and
+        four-character residue names, distinct for the sheets in use, that clash
+        with no other residue name, segment name or ion name and do not contain
+        END.
+
+        Parameters:
+        ----------
+        None
+
+        Returns:
+        -------
+        None
+
+        Raises:
+        ------
+        ValueError
+            On the first group of problems found, listed together.
+        '''
+
+        system = self.json_input['system']
+        enabled = system.get('sheets', False)
+        tube = system.get('tube-sheets', False)
+        block = self.json_input.get('sheets')
+        problems = []
+
+        if not isinstance(enabled, bool):
+            problems.append(f"system.sheets must be true or false, not {enabled!r}")
+        if not isinstance(tube, bool):
+            problems.append(f"system.tube-sheets must be true or false, not {tube!r}")
+        if block is None and enabled is not True and tube is not True:
+            if problems:
+                self._raise_sheet_error(problems)
+            return
+        if block is not None and not isinstance(block, dict):
+            self._raise_sheet_error([f'"sheets" must be an object, not {type(block).__name__}'])
+
+        unknown = sorted(set(block or {}) - set(SHEET_DEFAULTS))
+        if unknown:
+            problems.append(f"unknown key(s) {', '.join(unknown)}; "
+                            f"allowed: {', '.join(sorted(SHEET_DEFAULTS))}")
+        cfg = Sheet_Builder.resolve_config(block)
+
+        nanotube_type = self.json_input.get('nanotube', {}).get('type')
+        if system.get('nanotube') is not True or nanotube_type not in {"CNT", "CNT-Drude"}:
+            problems.append("sheets need a carbon nanotube (nanotube type CNT or CNT-Drude); "
+                            "the sheet carbons use the tube's carbon species")
+        if self.json_input.get('nanotube', {}).get('periodic', False) is True:
+            problems.append('a periodic nanotube cannot take sheets: remove system.sheets, '
+                            'system.tube-sheets and the "sheets" block, or set nanotube.periodic '
+                            'to false')
+        if cfg['lattice-xy'] is not True:
+            problems.append("lattice-xy must be true: a periodic sheet needs a whole number "
+                            "of graphene cells in x and y")
+        if cfg['orientation'] not in SHEET_ORIENTATIONS:
+            problems.append(f"orientation {cfg['orientation']!r} is not one of "
+                            f"{', '.join(SHEET_ORIENTATIONS)}")
+        for key in ('wall-gap', 'seam-gap'):
+            value = cfg[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                problems.append(f"{key} must be a positive number of Angstrom, not {value!r}")
+        value = cfg['hole-buffer']
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            problems.append(f"hole-buffer must be zero or a positive number of Angstrom, not {value!r}")
+        value = cfg['rim-offset']
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            problems.append(f"rim-offset must be a number of Angstrom (positive moves the tube-end "
+                            f"sheets outward), not {value!r}")
+
+        resnames = cfg['resnames']
+        all_sides = SHEET_SIDES + TUBE_SHEET_SIDES
+        if not isinstance(resnames, dict) or set(resnames) != set(all_sides):
+            problems.append(f"resnames must name exactly {', '.join(all_sides)}")
+        else:
+            # The PDB and PSF also use SYS as a segment name and the ion names
+            # as residue names.
+            reserved = {"TUBE", "IONS", "SYS"}
+            reserved.update(str(name).upper() for name in self.config.ions)
+            reserved.update(str(name).upper() for name in self.config.dion_pdb_names.values())
+            for sol in self.json_input.get('solvation', {}).get('groups', []):
+                label = re.sub(r"[^A-Za-z0-9]", "", str(sol.get('type', ''))).upper()
+                if label:
+                    reserved.add(label[:4])
+            for side in all_sides:
+                name = resnames[side]
+                if not isinstance(name, str) or not re.fullmatch(r"[A-Z0-9]{1,4}", name):
+                    problems.append(f"resnames.{side} {name!r} must be 1-4 uppercase letters or digits")
+                elif name in reserved:
+                    problems.append(f"resnames.{side} {name!r} clashes with an existing residue name")
+                elif "END" in name:
+                    problems.append(f"resnames.{side} {name!r} contains END, which ends the "
+                                    f"atom records when restraints.ref is written")
+            in_use = SHEET_SIDES + (TUBE_SHEET_SIDES if tube is True else ())
+            if len({resnames[side] for side in in_use}) != len(in_use):
+                problems.append("the sheets need different resnames")
+
+        if problems:
+            self._raise_sheet_error(problems)
+
+    def _validate_solvent_sides(self):
+
+        '''
+        Validate each solvation group's side, in the same terms as the terminal
+        groups' side: full (the default, the whole box), "-" or "+" (one side
+        of the tube), "both" (the two sides, nothing around or inside the tube)
+        or around-tube. Every side but full needs a nanotube. A one-sided group in a box with no walls at all is allowed,
+        with a warning, since its two sides meet across the periodic boundary.
+
+        Parameters:
+        ----------
+        None
+
+        Returns:
+        -------
+        None
+
+        Raises:
+        ------
+        ValueError
+            On the first group of problems found, listed together.
+        '''
+
+        system = self.json_input['system']
+        if system.get('solvation', False) is not True:
+            return
+        allowed = ("full", "-", "+", "both", "around-tube")
+        walled = system.get('sheets', False) is True or system.get('tube-sheets', False) is True
+        problems = []
+        for group in self.json_input.get('solvation', {}).get('groups', []):
+            side = group.get('side', 'full')
+            label = f"solvation group '{group.get('type')}'"
+            if side not in allowed:
+                problems.append(f"{label}: side {side!r} is not one of {', '.join(allowed)}")
+            elif side != 'full' and system.get('nanotube') is not True:
+                problems.append(f"{label}: side {side!r} needs a nanotube to measure from; use full")
+            elif side in ('-', '+') and not walled:
+                my_log_file.warning(
+                    f"Solvation group '{group.get('type')}' is placed on the {side} side, but the box "
+                    f"has no walls, so the two sides meet across the periodic boundary."
+                )
+
+        if problems:
+            lines = "\n".join(f"  - {problem}" for problem in problems)
+            msg = (
+                f"\n{'='*60}\n"
+                f"  VALIDATION ERROR: Solvent side\n"
+                f"{'='*60}\n"
+                f"{lines}\n"
+                f"{'='*60}"
+            )
+            my_log_file.error(msg)
+            raise ValueError(msg)
+
+    def _raise_sheet_error(self, problems):
+
+        lines = "\n".join(f"  - {problem}" for problem in problems)
+        msg = (
+            f"\n{'='*60}\n"
+            f"  VALIDATION ERROR: Sheets\n"
+            f"{'='*60}\n"
+            f"{lines}\n"
+            f"{'='*60}"
+        )
+        my_log_file.error(msg)
+        raise ValueError(msg)
+
     def _validate_fg_available_carbons(self, fg_config, n_atoms):
 
         '''
@@ -2030,6 +2691,42 @@ class IO:
 
         my_log_file.info(f"File type .data file written to {lammps_file}")
 
+    def write_xsc_file(self):
+
+        '''
+        Write a NAMD extended-system (.xsc) file holding the exact box of a sheet
+        or lattice-matched build: step 0, the three cell vectors and the cell
+        centre as origin. NAMD reads the periodic cell from it, which a periodic
+        sheet needs exactly; the PDB atom extents would be too small.
+
+        Parameters:
+        ----------
+        None
+
+        Returns:
+        -------
+        None
+
+        Raises:
+        ------
+        None
+        '''
+
+        src = self.config.main_file
+        xsc_file = self._validate_savepath(src[:-6] + ".xsc")
+        (x_lo, x_hi), (y_lo, y_hi), (z_lo, z_hi) = (
+            (float(lo), float(hi)) for lo, hi in self.config.fixed_box
+        )
+        lx, ly, lz = x_hi - x_lo, y_hi - y_lo, z_hi - z_lo
+        ox, oy, oz = (x_lo + x_hi) / 2.0, (y_lo + y_hi) / 2.0, (z_lo + z_hi) / 2.0
+
+        with open(xsc_file, "w") as f:
+            f.write("# NAMD extended system configuration written by chirality-kit\n")
+            f.write("#$LABELS step a_x a_y a_z b_x b_y b_z c_x c_y c_z o_x o_y o_z\n")
+            f.write(f"0 {lx:.6f} 0 0 0 {ly:.6f} 0 0 0 {lz:.6f} {ox:.6f} {oy:.6f} {oz:.6f}\n")
+
+        my_log_file.info(f"File type .xsc file written to {xsc_file}")
+
     def write_xyz_file(self): 
 
         '''
@@ -2101,6 +2798,9 @@ class IO:
             f.write(f"REMARK  GENERATED WITH CHIRALITY-KIT\n")
             f.write(f"REMARK  SETUP PERIODIC BOUNDARY CONDITION\n")
             f.write(f"REMARK  DATE {time.strftime('%Y-%m-%d')}\n")
+            if self.config.fixed_box is not None:
+                lx, ly, lz = (float(hi) - float(lo) for lo, hi in self.config.fixed_box)
+                f.write(f"CRYST1{lx:9.3f}{ly:9.3f}{lz:9.3f}{90.0:7.2f}{90.0:7.2f}{90.0:7.2f} P 1           1\n")
             
             tube_species_counts = defaultdict(int)
             atom_count = 1
@@ -2139,6 +2839,11 @@ class IO:
                     else:
                         res_name = "TUBE"
 
+                # Sheet residues carry their own name; their Drudes follow the core.
+                sheet_name = self.config.residue_name_by_index.get(residue_index)
+                if sheet_name is not None:
+                    res_name = sheet_name
+
                 if is_drude_particle and previous_core_props is not None:
                     residue_index, res_name = previous_core_props
 
@@ -2157,7 +2862,10 @@ class IO:
                 elif is_ion_particle:
                     atom_name = original_atom_type
 
-                seg_id = "TUBE" if res_name == "TUBE" else "SYS"
+                if sheet_name is not None:
+                    seg_id = sheet_name
+                else:
+                    seg_id = "TUBE" if res_name == "TUBE" else "SYS"
 
                 occupancy = 1.00
                 temp = 0.00 # default temp factor
@@ -2169,8 +2877,8 @@ class IO:
                         if (int(next_parts[1]) == residue_index
                                 and next_parts[-1] in self.config.dion_particles):
                             temp += float(next_parts[3])
-                elif res_name == "TUBE":
-                    temp = 1.00    # set temp factor to 1.00 for tube carbons
+                elif res_name == "TUBE" or sheet_name is not None:
+                    temp = 1.00    # set temp factor to 1.00 for tube and sheet carbons
 
                 if element in ['DP', 'LP']: # lone pairs or drude particles
                     temp = 0.00
@@ -2497,6 +3205,11 @@ class IO:
                     else:
                         res_name = "TUBE"
 
+                # Sheet residues carry their own name; their Drudes follow the core.
+                sheet_name = self.config.residue_name_by_index.get(residue_index)
+                if sheet_name is not None:
+                    res_name = sheet_name
+
                 if is_drude_particle and previous_core_props is not None:
                     residue_index, res_name = previous_core_props
 
@@ -2508,7 +3221,10 @@ class IO:
                     atom_name = species_entry["atom_element"] + str(self._convert_to_base36(count))
                     tube_species_counts[original_atom_type] += 1
 
-                seg_id = "TUBE" if res_name == "TUBE" else "SYS"
+                if sheet_name is not None:
+                    seg_id = sheet_name
+                else:
+                    seg_id = "TUBE" if res_name == "TUBE" else "SYS"
 
                 if self.config.drude_polarisable == False:
                     line_write = (
@@ -2780,6 +3496,11 @@ class IO:
             return
         
         restraints_file = os.path.join(self.config.system_folder, f"restraints.ref")
+
+        # Tube-end sheets are held with the tube; box-end sheets stay free.
+        held_sheets = set()
+        if self._tube_sheet_report is not None:
+            held_sheets = set(self._tube_sheet_report['resnames'].values())
         
         with open(pdb_file, 'r') as f:
             with open(restraints_file, 'w') as rf:
@@ -2801,6 +3522,10 @@ class IO:
                         if atom_name != "DP" and res_name == "TUBE" and "C" in line[12:16].strip() and line[12:16].strip() != "C":
 
                             # Format occupancy (cols 55-150) and B-factor (cols 61-66)
+                            new_occ = f"{B_factor:6.2f}"
+                            new_b = f"{spring_constant:6.2f}"
+                            line = line[:54] + new_occ + new_b + line[66:]
+                        elif atom_name != "DP" and res_name in held_sheets:
                             new_occ = f"{B_factor:6.2f}"
                             new_b = f"{spring_constant:6.2f}"
                             line = line[:54] + new_occ + new_b + line[66:]

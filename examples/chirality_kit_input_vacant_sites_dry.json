@@ -1,9 +1,9 @@
 {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.4",
+        "version": "0.8.0",
         "creator": "Stef @ Warwick University",
-        "filename": "chirality_main.py"
+        "filename": "chirality_kit.py"
     },
     "settings": {
         "system_name": "auto",
@@ -37,10 +37,10 @@
             "term-hydrogenate": true,
             "groups": [
                 {"type": "COO-", "count": 1, "side": "-"},
-                {"type": "DUMMY", "count": 2, "side": "-"},
+                {"type": "VACANT", "count": 2, "side": "-"},
                 {"type": "COO-", "count": 1, "side": "-"},
                 {"type": "OH-", "count": 1, "side": "+"},
-                {"type": "DUMMY", "count": 1, "side": "+"},
+                {"type": "VACANT", "count": 1, "side": "+"},
                 {"type": "OH-", "count": 1, "side": "+"},
                 {"type": "C2H5", "count": 1, "side": "both"}
             ]
@@ -54,9 +54,9 @@
                 "ring-placement": "external",
                 "groups": [
                     {"type": "H+", "count": 1},
-                    {"type": "DUMMY", "count": 2},
+                    {"type": "VACANT", "count": 2},
                     {"type": "H+", "count": 1},
-                    {"type": "DUMMY", "count": 1}
+                    {"type": "VACANT", "count": 1}
                 ]
             },
             {
@@ -67,9 +67,9 @@
                 "ring-placement": "internal",
                 "groups": [
                     {"type": "H+", "count": 1},
-                    {"type": "DUMMY", "count": 1},
+                    {"type": "VACANT", "count": 1},
                     {"type": "H+", "count": 1},
-                    {"type": "DUMMY", "count": 2}
+                    {"type": "VACANT", "count": 2}
                 ]
             }
         ]

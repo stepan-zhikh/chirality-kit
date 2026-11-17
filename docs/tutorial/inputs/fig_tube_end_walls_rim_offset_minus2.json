@@ -1,0 +1,51 @@
+{
+    "metadata": {
+        "made-by": "chirality-kit",
+        "version": "0.8.0"
+    },
+    "settings": {
+        "system_name": "auto",
+        "verbose": false,
+        "output_types": [
+            ".pdb",
+            ".psf"
+        ],
+        "bonds": true,
+        "angles": true,
+        "dihedrals": true,
+        "impropers": true,
+        "lone-pairs": true,
+        "anisotropy": true
+    },
+    "system": {
+        "force-field": "CHARMM36m",
+        "size": "auto",
+        "size-padding-xy": 10.0,
+        "size-padding-z": 12.0,
+        "nanotube": true,
+        "functionalisation": true,
+        "solvation": false,
+        "sheets": false,
+        "tube-sheets": true
+    },
+    "sheets": {
+        "rim-offset": -2.0
+    },
+    "nanotube": {
+        "type": "CNT",
+        "n": 8,
+        "m": 4,
+        "repeats": 2
+    },
+    "functionalisation": {
+        "term": {
+            "term-hydrogenate": true,
+            "groups": [
+                {
+                    "type": "COO-",
+                    "count": 3
+                }
+            ]
+        }
+    }
+}

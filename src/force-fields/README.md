@@ -34,7 +34,7 @@ of these files: `par_all36_cgenff.prm`, `top_all36_cgenff.rtf`,
 `toppar_water_ions.str`, and `toppar_all.history`. Consider updating before
 publishing work that depends on CGenFF or on water and ion parameters.
 
-### `charmm36m-ndp/`: CHARMM Drude polarizable force field
+### `charmm36m-ndp/`: CHARMM Drude polarisable force field
 
 - Upstream release: **`drude_toppar_2023`**, distributed as
   `toppar/drude/drude_toppar_2023.tgz` inside `toppar_c36_feb26.tgz`

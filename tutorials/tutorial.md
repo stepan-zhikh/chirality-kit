@@ -12,11 +12,12 @@
 4. [Chirality and geometry](#4-chirality-and-geometry)
 5. [Functionalisation](#5-functionalisation)
 6. [Solvation](#6-solvation)
-7. [Force field selection](#7-force-field-selection)
-8. [Understanding the output](#8-understanding-the-output)
-9. [Common recipes](#9-common-recipes)
-10. [Tips and known limitations](#10-tips-and-known-limitations)
-11. [Bonus: XYZ generation for MLIPs](#11-bonus-xyz-generation-for-mlips)
+7. [Graphene walls](#7-graphene-walls)
+8. [Force field selection](#8-force-field-selection)
+9. [Understanding the output](#9-understanding-the-output)
+10. [Common recipes](#10-common-recipes)
+11. [Tips and known limitations](#11-tips-and-known-limitations)
+12. [Bonus: XYZ generation for MLIPs](#12-bonus-xyz-generation-for-mlips)
 
 
 ---
@@ -59,13 +60,13 @@ explicitly with `--force-fields` (Section 2.1).
 From the repository root, with a JSON input file:
 
 ```bash
-PYTHONPATH=src python3 -m chirality_kit --json examples/chirality_kit_input_dummy_gaps_dry.json
+PYTHONPATH=src python3 -m chirality_kit --json examples/chirality_kit_input_vacant_sites_dry.json
 ```
 
 or the single-file version:
 
 ```bash
-python3 src/chirality_kit_monolith/chirality_kit.py --json examples/chirality_kit_input_dummy_gaps_dry.json
+python3 src/chirality_kit_monolith/chirality_kit.py --json examples/chirality_kit_input_vacant_sites_dry.json
 ```
 
 With no `--json`, the built-in `INPUT` dictionary in the source is used instead.
@@ -81,7 +82,7 @@ source and run with no arguments or, as recommended, keep it as a JSON file and
 pass it with `--json`, which archives the exact input and RNG seed alongside the
 output so the run can be replayed (Section 2.1).
 
-The dictionary has six top-level keys:
+The dictionary has six main top-level keys, plus an optional seventh:
 
 ```
 "metadata"          version info, plus the archived RNG seed
@@ -90,6 +91,7 @@ The dictionary has six top-level keys:
 "nanotube"          CNT chirality and length
 "functionalisation" which groups, how many, where
 "solvation"         solvent species and placement
+"sheets"            optional: graphene walls, at the box ends or the tube ends (Section 7)
 ```
 
 ### `settings`
@@ -123,13 +125,15 @@ that section from the generated files.
 | `nanotube` | bool | Build a nanotube. |
 | `functionalisation` | bool | Attach functional groups. |
 | `solvation` | bool | Fill with solvent. |
+| `sheets` | bool | Close the box ends with graphene walls (Section 7). Default `false`. |
+| `tube-sheets` | bool | Put holed graphene walls at the two tube ends (Section 7.4). Default `false`. |
 
 **`pbc-override`**: with `"size": "auto"`, a `size-padding-xy` or
 `size-padding-z` below the recommended 14 Angstrom is raised to 14 Angstrom, so a run cannot
 silently produce a box in which the system sees its own periodic image. Setting
 `"pbc-override": true` keeps your smaller values as given and logs that it did
 so. It applies to automatic box construction only; an explicit `size` list is
-always used exactly as written (Section 10).
+always used exactly as written (Section 11).
 
 Use it when you deliberately want a tighter cell than the default and accept
 responsibility for the image interactions. It has nothing to do with
@@ -181,7 +185,7 @@ This builds a (10,10) armchair CNT with 5 unit cells, no functionalisation, no s
 INPUT = {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.4",
+        "version": "0.8.0",
         "creator": "your name",
         "filename": "chirality_kit.py"
     },
@@ -238,7 +242,7 @@ CHARMM36m_CNT_(10,10)x5/
 ```
 
 A solvated run with ionic groups also writes a `.salts` record. Every file is
-described in Section 8.
+described in Section 9.
 
 ---
 
@@ -246,18 +250,22 @@ described in Section 8.
 
 The `nanotube` block controls the tube geometry.
 
+![Armchair, zigzag and chiral tubes, end-on and side views](../docs/tutorial/chirality.png)
+
+*The three tube families at one scale: (8,8) armchair, (10,0) zigzag and (8,4) chiral. Built from [`fig_tube_armchair_8_8.json`](../docs/tutorial/inputs/fig_tube_armchair_8_8.json), [`fig_tube_zigzag_10_0.json`](../docs/tutorial/inputs/fig_tube_zigzag_10_0.json) and [`fig_tube_chiral_8_4.json`](../docs/tutorial/inputs/fig_tube_chiral_8_4.json), seed 12345.*
+
 ```python
 "nanotube": {
     "type": "CNT",   # "CNT", "BNNT", "MoS2NT", or "MoSSeNT"
     "n": 8,          # chiral index n
     "m": 4,          # chiral index m
     "repeats": 3,     # unit cells stacked along the tube axis
-    "periodic": False,# opt-in axial PBC; leave off for finite tubes (see Section 10)
+    "periodic": False,# opt-in axial PBC; leave off for finite tubes (see Section 11)
     "outer-chalcogen": "Se"  # MoSSeNT only: "Se" (default) or "S" on the outside
 }
 ```
 
-`periodic` defaults to `False` for every type. Turn it on only if you want a tube bonded across the z boundary for a periodic simulation; it deliberately leaves the last-cell atoms with a single bond. See Section 10 for the details and the log lines to check.
+`periodic` defaults to `False` for every type. Turn it on only if you want a tube bonded across the z boundary for a periodic simulation; it deliberately leaves the last-cell atoms with a single bond. See Section 11 for the details and the log lines to check.
 
 `outer-chalcogen` is read only for `"MoSSeNT"`/`"MoSSe"` and chooses which face of
 the Janus wall carries which chalcogen: `"Se"` (the default) puts selenium on the
@@ -312,6 +320,10 @@ This is also saved to the `.summary` file in the output folder.
 
 Set `"functionalisation": True` in the `system` block, then configure the `functionalisation` section. The section is split into three independent placement strategies: **term**, **rings**, and **loose**, which can be used in any combination.
 
+![Functionalised tubes](../docs/tutorial/functionalisation.png)
+
+*Top and bottom left: the complex example without solvent ([`fig_functionalisation_complex_dry.json`](../docs/tutorial/inputs/fig_functionalisation_complex_dry.json)). Bottom right: vacant sites ([`chirality_kit_input_vacant_sites_dry.json`](../examples/chirality_kit_input_vacant_sites_dry.json)). Seed 12345.*
+
 ### Available functional groups
 
 The groups you can use are exactly the `Fragment` entries of the selected force
@@ -330,7 +342,7 @@ field, so the list depends on `force-field`. For `CHARMM36m`:
 | `"NH3+-CPEA"` | +0.580 | Protonated amine, phenyl-ethyl linker |
 | `"NH3+-CPOA"` | +0.590 | Protonated amine, longer linker |
 | `"H+"` or `"H-term"` | +0.022 | Hydrogen; also used by automatic hydrogenation |
-| `"DUMMY"` | N/A | Virtual spacing slot for term and ring placement; never written as a fragment |
+| `"VACANT"` | N/A | An empty site in term and ring placement; never written as a fragment |
 
 The charge column is the net charge of the fragment's own atoms, summed straight
 from the `.xdata`. Several are deliberately non-integer because the parameter sets they
@@ -426,22 +438,22 @@ The `rings` block places groups in discrete axial bands, each containing one com
 | `ring-phase-start-offset` | Starting angular offset for the first ring |
 | `groups` | List of group types and counts per ring. All counts are repeated for every ring in `ring-count`. |
 
-### 5.3 Ordered gaps with `DUMMY`
+### 5.3 Vacant sites
 
 Group entries are expanded in list order before the attachment sites are
-chosen. `DUMMY` participates in that sequence and therefore controls the
+chosen. `VACANT` takes part in that sequence and therefore controls the
 spacing, but it is removed before fragments are attached or output files are
 written.
 
-For example, this defines eight virtual positions around each ring. Only the
-first and fourth positions receive real groups:
+For example, this defines eight sites around each ring. Only the first and
+fourth sites receive groups:
 
 ```json
 "groups": [
     { "type": "COO-", "count": 1 },
-    { "type": "DUMMY", "count": 2 },
+    { "type": "VACANT", "count": 2 },
     { "type": "OH-", "count": 1 },
-    { "type": "DUMMY", "count": 4 }
+    { "type": "VACANT", "count": 4 }
 ]
 ```
 
@@ -450,23 +462,25 @@ The same pattern can be used for a selected tube end by adding `side`:
 ```json
 "groups": [
     { "type": "COO-", "count": 1, "side": "-" },
-    { "type": "DUMMY", "count": 2, "side": "-" },
+    { "type": "VACANT", "count": 2, "side": "-" },
     { "type": "COO-", "count": 1, "side": "-" }
 ]
 ```
 
-On a ring, a dummy slot leaves the original sidewall carbon unchanged. At an
-end, `term-hydrogenate: true` caps the dummy position with `H-term`; when it is
-false, the end carbon remains bare. `DUMMY` is valid only in `term` and
+On a ring, a vacant site leaves the original sidewall carbon unchanged. At an
+end, `term-hydrogenate: true` caps the vacant site with `H-term`; when it is
+false, the end carbon remains bare. `VACANT` is valid only in `term` and
 `rings`, requires no force-field fragment, and is omitted from generated
 molecular files, names, logs, and summaries. It remains in the archived input
 JSON so the spacing pattern is reproducible. It never consumes an atom,
 residue, bond, angle, dihedral, improper, lone-pair, anisotropy, or coefficient
-index; only real fragments reach topology generation.
+index; only real fragments reach topology generation. Inputs written before
+0.8.0 may use `DUMMY`; it is read as `VACANT`, builds the same system, and the
+log notes the new name.
 
 A complete dry `(8,4) x 2` example covering both terminal sides and external
 and internal rings is available at
-[`examples/chirality_kit_input_dummy_gaps_dry.json`](../examples/chirality_kit_input_dummy_gaps_dry.json).
+[`examples/chirality_kit_input_vacant_sites_dry.json`](../examples/chirality_kit_input_vacant_sites_dry.json).
 
 ---
 
@@ -601,6 +615,10 @@ The z-ranges tile the full tube with no gaps or overlaps. Swap `"all-external"` 
 
 Set `"solvation": True` in `system`, then configure `solvation.groups`. Each entry in `groups` is one solvent species.
 
+![Solvated tubes](../docs/tutorial/solvation.png)
+
+*Left: [`chirality_kit_input_(8,4)x4_COO_groups_NONPOL.json`](../examples/chirality_kit_input_%288%2C4%29x4_COO_groups_NONPOL.json). Right: water everywhere and KCl with `"side": "+"` ([`fig_solvation_one_sided_salt.json`](../docs/tutorial/inputs/fig_solvation_one_sided_salt.json)). Seed 12345.*
+
 ### The two placement modes
 
 `placement` selects the algorithm, and the two are quite different:
@@ -654,6 +672,7 @@ chirality are preserved.
 | `placement_pad` | Explicit molecular spacing, alternate to `concentration` and `count`|
 | `molecules_per_unit` | Physical molecules per template unit, usually 1 |
 | `charge-neutrality` | `true` -> auto-compute ion counts to neutralise the system. Honoured on the **last** ionic group only; see below |
+| `side` | Where the group goes, in the terminal groups' terms: `"full"` (the whole box, the default), `"-"` or `"+"` (the negative-z or positive-z side of the tube), `"both"` (the two sides, nothing around or inside the tube), or `"around-tube"` (the slab around the tube). The boundaries are the tube's z range, or the tube-end walls when those are on (Section 7.4). A `concentration` counts the region's volume |
 
 ### The bulk phase
 
@@ -691,7 +710,7 @@ each other, so ions always stay in the check.
 **Adding a second solvent.** Give it a lower `priority` number than the bulk. It is
 then culled against the bulk, which is correct as long as it is dilute enough that
 its own Bridson radius stays comfortably above `min_distance`; the CO2-in-benzene
-example in Section 7 is a good shape for this. A genuine 50/50 co-solvent mixture is not
+example in Section 12 is a good shape for this. A genuine 50/50 co-solvent mixture is not
 supported: both phases would need to be exempt from self-checking while still being
 checked against each other, which needs cross-phase neighbour search that
 chirality-kit does not implement.
@@ -814,7 +833,189 @@ The discrepancy is normal; some molecules at the tube surface are removed during
 
 ---
 
-## 7. Force field selection
+## 7. Graphene walls
+
+> **Status:** the graphene walls (box ends since 0.7.0, tube ends since 0.8.0)
+> are still being tested in production simulations. Check a walled build before
+> relying on it, and report anything unexpected through
+> [GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues).
+
+chirality-kit can close a system with graphene walls of two kinds:
+
+- **Box-end walls** (`system.sheets`): a sheet at each z end of the box, below
+  the lowest atom and above the highest, so the tube is the only route from one
+  reservoir to the other.
+- **Tube-end walls** (`system.tube-sheets`): a sheet at each end of the tube,
+  with a round hole the tube passes through.
+
+Either kind can be used alone, or both together. Every wall is a periodic
+graphene sheet made of the tube's own carbon species, bonded across the x and y
+box boundaries, so it has no free edges; it is exactly neutral. In a Drude force
+field each sheet carbon carries its Drude particle.
+
+### 7.1 The `sheets` block
+
+Both kinds read one top-level `sheets` block. Every key in it is optional; the
+values below are the defaults:
+
+```json
+"system": {
+    "...": "...",
+    "sheets": true,
+    "tube-sheets": false
+},
+"sheets": {
+    "orientation": "zigzag-x",
+    "wall-gap": 3.0,
+    "seam-gap": 15.0,
+    "hole-buffer": 2.5,
+    "rim-offset": 0.0,
+    "resnames": {"z-min": "SHTN", "z-max": "SHTP",
+                 "tube-z-min": "MEMN", "tube-z-max": "MEMP"}
+}
+```
+
+| Key | Used by | Meaning |
+|-----|---------|---------|
+| `orientation` | both | Which lattice direction lies along x. `zigzag-x` puts the zigzag direction (period √3·b, 2.494 Å) along x and the armchair direction (period 3·b, 4.320 Å) along y; `armchair-x` swaps them. These are the only two choices. |
+| `wall-gap` | both | Box-end walls: the distance from each sheet to the outermost atom of the built system. Tube-end walls: the solvent-free distance kept around each sheet's carbons. In Å. |
+| `seam-gap` | box-end | Vacuum between the z-max sheet and the periodic image of the z-min sheet, in Å. |
+| `hole-buffer` | tube-end | Added to the tube radius R to give the hole radius, in Å; zero or more. |
+| `rim-offset` | tube-end | Moves each sheet along the tube from its end's innermost rim carbon, in Å: positive outward, towards the box end, negative inward. Default 0, the sheet on the rim carbon. |
+| `resnames` | both | Residue (and segment) name of each sheet: `z-min` and `z-max` for the box-end walls, `tube-z-min` and `tube-z-max` for the tube-end walls. 1–4 uppercase letters or digits; the names of the sheets in use must differ from each other, and every name must differ from `TUBE`, `IONS` and `SYS`, from the ion and solvent names, and must not contain `END`. |
+| `lattice-xy` | both | Must be `true` (the default); it can be left out. |
+
+With both kinds on, all four sheets share one lattice and one x and y size.
+
+The walls need a carbon tube (`CNT` or `CNT-Drude`) that is not periodic; a
+periodic tube with any sheets keyword is rejected before the build starts.
+
+### 7.2 The box is rounded up to the lattice
+
+A periodic sheet must be a whole number of graphene cells in x and y, so a
+`sheets` block sets the final box x and y, not the size you ask for.
+
+- Before any solvent goes in, the box x and y are each rounded **up** to the
+  next whole number of cells, about the box centre. They are never made
+  smaller.
+- The increase is less than one cell: under 2.494 Å along the zigzag direction
+  and under 4.320 Å along the armchair direction.
+- This applies to an `"auto"` box, where the xy padding is raised, and equally
+  to an explicit `size`, which is widened: the lattice wins over the size you
+  give.
+- The box z length is not rounded: box-end walls add their own height on top
+  (see 7.3).
+- The log and the `.summary` give the requested and the applied size, and the
+  number of cells in x and y.
+
+The rounding happens whenever either switch is on, with or without a `sheets`
+block. A `sheets` block with both switches off also rounds the box: that build
+has the walled box but no walls.
+
+### 7.3 Walls at the box ends
+
+`"sheets": true` adds the box-end walls. After solvation, one sheet goes
+`wall-gap` below the lowest atom and one goes `wall-gap` above the highest. The
+box then grows in z to leave `seam-gap` of vacuum between the top sheet and the
+image of the bottom one. Nothing already in the box is moved or deleted.
+
+![Box-end walls](../docs/tutorial/box_end_walls.png)
+
+*Box-end walls on a dry tube with 3 COO⁻ per end: side view (left) and 3D view (right). Built from [`fig_box_end_walls_dry.json`](../docs/tutorial/inputs/fig_box_end_walls_dry.json), seed 12345.*
+
+**Walls on and walls off give the same system.** Keep the `sheets` block and the
+seed, and flip only `system.sheets`. The two builds are identical in every tube,
+solvent and ion atom; only the sheet atoms and the box z length differ.
+
+`restraints.ref` restrains the tube only; the box-end sheets are at 0.00.
+
+### 7.4 Walls at the tube ends
+
+`"tube-sheets": true` adds the tube-end walls.
+
+**Where each sheet sits.** By default, at the plane of its end's innermost rim
+carbon, a tube carbon bonded to only two other tube carbons. On a chiral tube
+the rim is staggered, so the whole rim reaches the sheet or passes it; on
+armchair and zigzag tubes the rim is flat and lies in the plane.
+
+`rim-offset` moves both sheets the same distance along the tube from there:
+
+- **Negative** moves each sheet inward, so more of the tube reaches past it
+  into its reservoir. The two sheets must stay more than 2 × `wall-gap` apart.
+- **Positive** moves each sheet outward, into the staggered part of a chiral
+  rim, so the rim no longer reaches the sheet all the way round. The sheet
+  can go no further than the end's outermost rim carbon, where the tube still
+  passes through the hole. A flat armchair or zigzag rim allows no outward
+  offset.
+
+An offset outside these limits stops the build with a message giving the
+allowed range. The log and the `.summary` report the rim carbons and the sheet
+planes, and the log warns if a sheet carbon comes within 2 Å of the tube or
+its groups.
+
+![Tube-end walls and rim-offset](../docs/tutorial/tube_end_walls.png)
+
+*Tube-end walls on a dry (8,4)x2 tube with 3 COO⁻ per end. Top: the +z end at `rim-offset` −2, 0 and +0.8 Å ([`fig_tube_end_walls_rim_offset_minus2.json`](../docs/tutorial/inputs/fig_tube_end_walls_rim_offset_minus2.json), [`_0.json`](../docs/tutorial/inputs/fig_tube_end_walls_rim_offset_0.json), [`_plus0.8.json`](../docs/tutorial/inputs/fig_tube_end_walls_rim_offset_plus0.8.json)). Bottom: the default, in 3D. Seed 12345.*
+
+**The hole.** The hole is centred on the tube axis. Every sheet carbon closer to
+the axis than R + `hole-buffer` is removed, and then any carbon left with fewer
+than two neighbours. The tube passes through the hole and is not bonded to the
+sheet; the edge carbons are bare and neutral. The default `hole-buffer`, 2.5 Å,
+keeps the hole edge clear of the rim and its functional groups.
+
+**The annulus is cleared when the system is built.** After solvation, any
+solvent molecule with an atom between the two sheets outside the tube, or
+within `wall-gap` of a sheet carbon, is removed and listed in
+`<system-name>.carved`. Ions are kept out of that slab when they are placed, so
+none is ever deleted and the charge is unchanged.
+
+**Solvent on one side.** Give a solvation group `"side": "+"` or `"side": "-"`,
+the same values the terminal groups use, to place it on the positive-z or
+negative-z side of the tube only. With tube-end walls, each side starts
+`wall-gap` beyond its sheet; without them, the sides start at the ends of the
+`TUBE` residue. `"both"` fills the two sides and leaves the middle empty,
+`"around-tube"` fills the annulus on purpose (and is not cleared), and `"full"`,
+the default, uses the whole box. For example, to put the salt above the tube and
+the water everywhere:
+
+```json
+"solvation": {
+    "groups": [
+        {"type": "SPCE", "placement": "packed", "priority": 100,
+         "min_distance": 1.8, "concentration": 55.5, "molecules_per_unit": 1},
+        {"type": "KCl", "placement": "ionic", "charge-neutrality": true,
+         "priority": 50, "count": 4, "min_distance": 2.0, "side": "+"}
+    ]
+}
+```
+
+**Restraints and reservoirs.** `restraints.ref` holds the tube-end sheets with
+the tube (1.00): with the annulus empty, a free holed sheet could slide along
+the tube. Without box-end walls, the two reservoirs meet across the periodic z
+boundary; with them, each reservoir runs from its tube-end sheet to its box-end
+sheet.
+
+### 7.5 What the walls add to the output
+
+- `.pdb`: the sheets at the end, each its own residue (`SHTN`, `SHTP`, `MEMN`,
+  `MEMP` by default), and a `CRYST1` line with the exact box.
+- `.psf`: the sheet carbons with their bonds, angles and dihedrals.
+- `<system-name>.xsc`: the exact cell. Read the cell from this file, not from
+  the atom extents of the `.pdb`, which are slightly smaller than a periodic
+  sheet needs.
+- `<system-name>_sheet_zmin.xyz` and `_sheet_zmax.xyz` (box-end walls),
+  `<system-name>_tube_sheet_zmin.xyz` and `_tube_sheet_zmax.xyz` (tube-end
+  walls): the coordinates of each sheet.
+- `<system-name>.carved` (tube-end walls): the solvent residues removed from
+  the annulus.
+- `.summary`: a `[Sheets]` block with the cell counts, sheet heights, hole
+  radius, closest approach of a sheet carbon to the tube, and the box.
+- Auto system names end in `_SHEETS` (box-end walls), `_TUBESHEETS` (tube-end
+  walls) or `_LATTICE` (a `sheets` block with both switches off).
+
+---
+
+## 8. Force field selection
 
 Set `"force-field"` in the `system` block.
 
@@ -851,7 +1052,7 @@ generated topology and its parameters travel together.
 
 ---
 
-## 8. Understanding the output
+## 9. Understanding the output
 
 | File | Use |
 |------|-----|
@@ -865,6 +1066,10 @@ generated topology and its parameters travel together.
 | `.nanotube` | Sidecar record of the structure atoms, used internally as the no-go zone for ionic placement. |
 | `.salts` | Sidecar record of every placed ion, so a later salt group can avoid the ions of an earlier one. Written only when the system has ionic groups. |
 | `SW-*.xyz` | The bare rolled tube as generated, before functionalisation or solvation. |
+| `.xsc` | The exact periodic cell, written for builds with a `sheets` block (Section 7). |
+| `*_sheet_zmin.xyz`, `*_sheet_zmax.xyz` | The coordinates of each graphene wall (Section 7). |
+| `*_tube_sheet_zmin.xyz`, `*_tube_sheet_zmax.xyz` | The coordinates of each tube-end wall (Section 7.4). |
+| `.carved` | The solvent residues removed from the annulus before the tube-end walls went in (Section 7.4). |
 | `restraints.ref` | Positional-restraint reference PDB. See below. |
 | `<force-field>/` | Copy of the force-field tree used, including its `.xdata` files and `toppar/` parameter files. |
 | `chirality_kit_input.json` | The full input as run, including the RNG seed. Feed it back in to replay the run (Section 2.1). |
@@ -921,7 +1126,7 @@ System name : CHARMM36m-NDP_CNT_(8,4)x2_(COO-_3)
 
 ---
 
-## 9. Common recipes
+## 10. Common recipes
 
 ### Solvated (8,8) armchair channel with KCl, polarisable water
 
@@ -1009,14 +1214,15 @@ The simplest possible sidewall functionalisation. Every external carbon on the w
 
 ---
 
-## 10. Tips and known limitations
+## 11. Tips and known limitations
 
 **Box padding: two separate checks**
 With `"size": "auto"`, padding values below **14 Angstrom** are silently raised to 14 Angstrom
 unless `pbc-override` is set (Section 2). With an explicit `size`, no padding is
 enforced, but after the build the `PBC BOX CHECK` block measures the real gap
 between the tube ends and the box boundary and warns if either side is under
-**10 Angstrom**:
+**10 Angstrom**. The tube here is the `TUBE` residue: the tube with its
+functional groups and caps. Graphene walls, solvent and ions are not counted:
 
 ```
 ============================================================
@@ -1077,7 +1283,7 @@ A second solvent works if you give it a lower `priority` number and keep it
 dilute; if its Bridson spacing drops below `min_distance + 2 x ref_radius` the run
 warns that the group will start culling itself.
 
-## 11. Bonus: XYZ generation for MLIPs
+## 12. Bonus: XYZ generation for MLIPs
 
 Oh, by the way, chirality-kit isn't only for MD-ready systems with explicit bonds and force fields. Because the solvation engine just places molecules in a box using Poisson-disk sampling and overlap removal, you can use it to generate clean, physically reasonable coordinate snapshots of complex molecular mixtures for machine-learning interatomic potential (MLIP) training. No nanotube, topology, or force field assignment is needed, just atoms in space.
 
@@ -1087,7 +1293,7 @@ A good example is a dense molecular mixture, here benzene with dissolved CO2, pa
 {
     "metadata": {
         "made-by": "chirality-kit",
-        "version": "0.6.4",
+        "version": "0.8.0",
         "creator": "your name",
         "filename": "chirality_kit.py"
     },
@@ -1162,4 +1368,4 @@ The resulting `.xyz` is ready to drop into your MLIP training set labelling work
 
 ---
 
-*Contact: [GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues), or stefan.zhikharev@warwick.ac.uk*
+*Contact: [GitHub Issues](https://github.com/stepan-zhikh/chirality-kit/issues)*

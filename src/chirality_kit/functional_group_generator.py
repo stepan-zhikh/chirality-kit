@@ -17,7 +17,10 @@ import numpy as np
 from ._runtime import my_log_file
 
 
-DUMMY_FG_TYPE = "DUMMY"
+VACANT_FG_TYPE = "VACANT"
+# The pre-0.8.0 name, still accepted and treated exactly like VACANT.
+LEGACY_VACANT_FG_TYPE = "DUMMY"
+VACANT_FG_TYPES = (VACANT_FG_TYPE, LEGACY_VACANT_FG_TYPE)
 TERM_SIDES = {
     "both": (True, True),
     "-": (True, False),
@@ -136,7 +139,7 @@ class Functional_Group_Generator:
         term_start_highest_x = term_cfg.get('term-start-highest-x', False)
         if not isinstance(term_start_highest_x, bool):
             raise ValueError("term-start-highest-x must be a boolean.")
-        dummy_term_ids = set()
+        vacant_term_ids = set()
 
         entry_seq, exit_seq = [], []
         for g in term_cfg.get('groups', []):
@@ -189,8 +192,8 @@ class Functional_Group_Generator:
             for pick_local, type_label in zip(picks, seq):
                 array_i = pool[pick_local]
                 _commit(array_i, vec, type_label)
-                if type_label == DUMMY_FG_TYPE:
-                    dummy_term_ids.add(int(indexes[array_i]))
+                if type_label in VACANT_FG_TYPES:
+                    vacant_term_ids.add(int(indexes[array_i]))
 
         # ==================================================================
         # 2. RINGS
@@ -317,7 +320,7 @@ class Functional_Group_Generator:
         # ==================================================================
 
         if term_hydrogenate:
-            occupied.difference_update(dummy_term_ids)
+            occupied.difference_update(vacant_term_ids)
             entry_c, exit_c = _end_carbons()
             if entry_c or exit_c:
                 for i in entry_c:
@@ -328,7 +331,7 @@ class Functional_Group_Generator:
                 my_log_file.info("No additional hydrogens can be added.")
 
         all_types = np.array(all_types, dtype='<U32')
-        visible = all_types != DUMMY_FG_TYPE
+        visible = ~np.isin(all_types, VACANT_FG_TYPES)
         return (
             all_indexes[visible],
             all_vectors[visible],
@@ -366,9 +369,9 @@ class Functional_Group_Generator:
         None
         '''
 
-        if np.any(np.asarray(all_types) == DUMMY_FG_TYPE):
+        if np.any(np.isin(np.asarray(all_types), VACANT_FG_TYPES)):
             raise ValueError(
-                "DUMMY is placement-only and must be removed before topology writing."
+                "VACANT is placement-only and must be removed before topology writing."
             )
 
         # future: inspect group topology here to route to multi-point if needed

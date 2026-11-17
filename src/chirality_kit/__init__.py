@@ -6,6 +6,7 @@ from .force_field_manager import Force_Field_Manager
 from .structure_generator import Structure_Generator
 from .functional_group_generator import Functional_Group_Generator
 from .solution_generator import Solution_Generator
+from .sheet_builder import Sheet_Builder
 from .io import IO
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "Structure_Generator",
     "Functional_Group_Generator",
     "Solution_Generator",
+    "Sheet_Builder",
     "IO",
 ]
